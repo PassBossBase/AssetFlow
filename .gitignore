@@ -1,0 +1,36 @@
+node_modules/
+.next/
+out/
+dist/
+.env*
+!.env.example
+.pnpm-store/
+*.tsbuildinfo
+
+# Local Convex state
+.convex/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Test reports and local tool caches
+coverage/
+playwright-report/
+test-results/
+.vercel/
+.turbo/
+.cache/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local certificates and exported secrets
+*.pem
+*.key
+*.p12
+*.pfx

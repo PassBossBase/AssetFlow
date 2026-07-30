@@ -1,0 +1,475 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useMutation, useQuery } from "convex/react";
+import { AlertCircle, GripVertical, Images, Upload } from "lucide-react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useLanguage } from "@/components/language-provider";
+import { toast } from "@/components/ui/toast";
+import { Modal } from "@/components/ui/modal";
+import { PopConfirm } from "@/components/ui/popconfirm";
+import { Popover } from "@/components/ui/popover";
+import { Input } from "@/components/ui/input";
+import { ProjectForm } from "@/features/projects/components/project-form";
+import { api, type Project } from "@/lib/convex";
+
+type ProjectWithAssetCount = Project & {
+  assetCount: number;
+  uploadSummary: {
+    failedCount: number;
+    progress: number;
+    uploadingCount: number;
+  };
+};
+
+type ProjectCardProps = {
+  draggingProjectId: Project["_id"] | null;
+  dropTargetProjectId: Project["_id"] | null;
+  language: "en" | "zh";
+  onDragEnd: () => void;
+  onDragStart: (projectId: Project["_id"]) => void;
+  onDragTargetChange: (projectId: Project["_id"] | null) => void;
+  onDrop: (sourceProjectId: Project["_id"], targetProjectId: Project["_id"]) => void;
+  project: ProjectWithAssetCount;
+};
+
+function projectIdAtPoint(clientX: number, clientY: number): Project["_id"] | null {
+  const card = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>("[data-project-id]");
+  const projectId = card?.dataset.projectId;
+  return projectId === undefined ? null : projectId as Project["_id"];
+}
+
+function createProjectDragPreview(project: ProjectWithAssetCount, description: string, assetCountLabel: string) {
+  const preview = document.createElement("div");
+  preview.setAttribute("aria-hidden", "true");
+  preview.className = "pointer-events-none fixed left-0 top-0 z-[100] min-h-28 overflow-hidden rounded-2xl border border-white/[0.2] bg-[#102037] p-4 opacity-100 shadow-[0_24px_56px_rgba(0,0,0,0.38),inset_0_1px_0_rgb(255_255_255_/_0.09)] will-change-transform";
+
+  const header = document.createElement("div");
+  header.className = "flex items-start justify-between gap-3";
+  const title = document.createElement("p");
+  title.className = "min-w-0 flex-1 truncate text-sm font-semibold text-foreground";
+  title.textContent = project.name;
+  const assetCount = document.createElement("span");
+  assetCount.className = "shrink-0 rounded-md border border-primary/25 bg-primary/[0.1] px-2 py-1 text-[11px] font-medium text-primary";
+  assetCount.textContent = `${project.assetCount} ${assetCountLabel}`;
+  header.append(title, assetCount);
+
+  const previewDescription = document.createElement("p");
+  previewDescription.className = "mt-3 line-clamp-2 text-sm leading-5 text-muted-foreground";
+  previewDescription.textContent = description;
+  preview.append(header, previewDescription);
+
+  return preview;
+}
+
+function ProjectCard({ draggingProjectId, dropTargetProjectId, language, onDragEnd, onDragStart, onDragTargetChange, onDrop, project }: ProjectCardProps) {
+  const createdAt = new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en", { dateStyle: "medium" }).format(project.createdAt);
+  const { t } = useLanguage();
+  const router = useRouter();
+  const cardRef = useRef<HTMLDivElement>(null);
+  const dragPreviewRef = useRef<HTMLDivElement | null>(null);
+  const dragFrameRef = useRef<number | null>(null);
+  const dragTargetRef = useRef<Project["_id"] | null>(null);
+  const dragCleanupRef = useRef<(() => void) | null>(null);
+  const isDragging = draggingProjectId === project._id;
+  const isDropTarget = dropTargetProjectId === project._id && !isDragging;
+  const hasUploadingTasks = project.uploadSummary.uploadingCount > 0;
+  const hasFailedTasks = !hasUploadingTasks && project.uploadSummary.failedCount > 0;
+  const uploadProgressLabel = t("uploadInProgress")
+    .replace("{count}", String(project.uploadSummary.uploadingCount))
+    .replace("{progress}", String(project.uploadSummary.progress));
+
+  function clearDragPreview() {
+    if (dragFrameRef.current !== null) cancelAnimationFrame(dragFrameRef.current);
+    dragFrameRef.current = null;
+    dragTargetRef.current = null;
+    dragPreviewRef.current?.remove();
+    dragPreviewRef.current = null;
+  }
+
+  function handlePointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0) return;
+    const cardBounds = cardRef.current?.getBoundingClientRect();
+    if (cardBounds === undefined) return;
+
+    event.preventDefault();
+    const preview = createProjectDragPreview(project, project.description || t("noDescription"), t("assetCount"));
+    preview.style.width = `${cardBounds.width}px`;
+    preview.style.transform = `translate3d(${cardBounds.left}px, ${cardBounds.top}px, 0)`;
+    document.body.appendChild(preview);
+    dragPreviewRef.current = preview;
+    onDragStart(project._id);
+
+    const dragHandle = event.currentTarget;
+    const pointerId = event.pointerId;
+    dragHandle.setPointerCapture(pointerId);
+    const offsetX = event.clientX - cardBounds.left;
+    const offsetY = event.clientY - cardBounds.top;
+    let pendingPosition: { clientX: number; clientY: number } | null = null;
+    const cleanupPointerDrag = () => {
+      if (dragHandle.hasPointerCapture(pointerId)) dragHandle.releasePointerCapture(pointerId);
+      window.removeEventListener("pointermove", updatePreview);
+      window.removeEventListener("pointerup", finishDrag);
+      window.removeEventListener("pointercancel", cancelDrag);
+      window.removeEventListener("keydown", handleKeyDown);
+      dragCleanupRef.current = null;
+    };
+    const updatePreview = (pointerEvent: PointerEvent) => {
+      pendingPosition = { clientX: pointerEvent.clientX, clientY: pointerEvent.clientY };
+      if (dragFrameRef.current !== null) return;
+
+      dragFrameRef.current = requestAnimationFrame(() => {
+        dragFrameRef.current = null;
+        if (pendingPosition === null) return;
+        preview.style.transform = `translate3d(${pendingPosition.clientX - offsetX}px, ${pendingPosition.clientY - offsetY}px, 0)`;
+        const targetProjectId = projectIdAtPoint(pendingPosition.clientX, pendingPosition.clientY);
+        const nextTargetProjectId = targetProjectId === project._id ? null : targetProjectId;
+        if (dragTargetRef.current === nextTargetProjectId) return;
+        dragTargetRef.current = nextTargetProjectId;
+        onDragTargetChange(nextTargetProjectId);
+      });
+    };
+    const finishDrag = (pointerEvent: PointerEvent) => {
+      cleanupPointerDrag();
+      clearDragPreview();
+      const targetProjectId = projectIdAtPoint(pointerEvent.clientX, pointerEvent.clientY);
+      if (targetProjectId !== null && targetProjectId !== project._id) {
+        onDrop(project._id, targetProjectId);
+      } else {
+        onDragEnd();
+      }
+    };
+    const cancelDrag = () => {
+      cleanupPointerDrag();
+      clearDragPreview();
+      onDragEnd();
+    };
+    const handleKeyDown = (keyboardEvent: KeyboardEvent) => {
+      if (keyboardEvent.key === "Escape") cancelDrag();
+    };
+
+    window.addEventListener("pointermove", updatePreview);
+    window.addEventListener("pointerup", finishDrag);
+    window.addEventListener("pointercancel", cancelDrag);
+    window.addEventListener("keydown", handleKeyDown);
+    dragCleanupRef.current = cancelDrag;
+  }
+
+  useEffect(() => () => {
+    dragCleanupRef.current?.();
+    clearDragPreview();
+  }, []);
+
+  return (
+    <div
+      ref={cardRef}
+      className="relative"
+      data-project-id={project._id}
+    >
+      {isDropTarget ? <>
+        <span aria-hidden="true" className="pointer-events-none absolute inset-0 z-10 rounded-2xl border-2 border-dashed border-white shadow-[0_0_0_3px_rgb(255_255_255_/_0.12),0_0_28px_rgb(255_255_255_/_0.16)]" />
+      </> : null}
+    <Card
+      className={`workspace-glass-surface group transition-[border-color,background-color,box-shadow] duration-200 hover:border-primary/35 hover:bg-[#0f1d30] hover:shadow-[0_14px_30px_rgba(8,15,30,0.18)] ${isDropTarget ? "bg-white/[0.055] shadow-[0_14px_30px_rgba(8,15,30,0.2)]" : ""}`}
+    >
+      <CardHeader className="p-5 pb-4">
+        <div className="flex items-start justify-between gap-3">
+          <CardTitle className="min-w-0 flex-1 truncate">{project.name}</CardTitle>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <span className="inline-flex items-center gap-1 rounded-md border border-primary/20 bg-primary/[0.07] px-2 py-1 text-xs font-medium text-primary" title={`${project.assetCount} ${t("assetCount")}`}>
+              <Images className="size-3.5" aria-hidden="true" />
+              {project.assetCount} {t("assetCount")}
+            </span>
+            <button
+              type="button"
+              className="-mr-1 -mt-1 inline-flex size-8 shrink-0 cursor-grab items-center justify-center rounded-md text-muted-foreground/65 transition-colors hover:bg-white/[0.07] hover:text-primary active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label={`${t("dragToReorderProject")}: ${project.name}`}
+              title={t("dragToReorderProject")}
+              onClick={(event) => event.stopPropagation()}
+              onPointerDown={handlePointerDown}
+            >
+              <GripVertical className="size-4" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+        <div className="min-h-10">
+          <CardDescription className={hasUploadingTasks || hasFailedTasks ? "line-clamp-1" : "line-clamp-2"}>{project.description || t("noDescription")}</CardDescription>
+          {hasUploadingTasks ? (
+            <div className="mt-2 flex items-center gap-2" aria-label={uploadProgressLabel}>
+              <Upload className="size-3 shrink-0 text-primary" aria-hidden="true" />
+              <span className="min-w-0 shrink-0 text-[11px] font-medium text-primary">{uploadProgressLabel}</span>
+              <span className="h-1 min-w-8 flex-1 overflow-hidden rounded-full bg-white/[0.09]" aria-hidden="true">
+                <span className="block h-full rounded-full bg-primary transition-[width] duration-200" style={{ width: `${project.uploadSummary.progress}%` }} />
+              </span>
+            </div>
+          ) : null}
+          {hasFailedTasks ? (
+            <p className="mt-2 flex items-center gap-1.5 text-[11px] font-medium text-destructive">
+              <AlertCircle className="size-3 shrink-0" aria-hidden="true" />
+              {t("uploadsFailed").replace("{count}", String(project.uploadSummary.failedCount))}
+            </p>
+          ) : null}
+        </div>
+      </CardHeader>
+      <CardContent className="flex items-center justify-between border-t border-white/[0.08] px-5 py-3.5">
+        <span className="text-xs text-muted-foreground">{createdAt}</span>
+        <span className="flex flex-wrap items-center justify-end gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 px-2 text-primary outline outline-1 -outline-offset-1 outline-transparent hover:bg-primary/[0.1] hover:text-primary hover:outline-primary/35"
+            onClick={(event) => { event.stopPropagation(); router.push(`/project/${project._id}`); }}
+            onKeyDown={(event) => event.stopPropagation()}
+          >
+            {t("openProject")}
+          </Button>
+          <RenameProjectButton project={project} />
+          <DeleteProjectButton project={project} />
+        </span>
+      </CardContent>
+    </Card>
+    </div>
+  );
+}
+
+function RenameProjectButton({ project }: { project: Project }) {
+  const { t } = useLanguage();
+  const updateProject = useMutation(api.projects.update);
+  const [isOpen, setIsOpen] = useState(false);
+  const [name, setName] = useState(project.name);
+  const [error, setError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  function handleOpenChange(open: boolean) {
+    if (isSaving) return;
+
+    if (open) {
+      setName(project.name);
+      setError(null);
+    }
+
+    setIsOpen(open);
+  }
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const nextName = name.trim();
+
+    if (nextName.length < 2) {
+      setError(t("projectNameMin"));
+      return;
+    }
+
+    if (nextName.length > 80) {
+      setError(t("projectNameMax"));
+      return;
+    }
+
+    if (nextName === project.name) {
+      setIsOpen(false);
+      return;
+    }
+
+    setError(null);
+    setIsSaving(true);
+    try {
+      await updateProject({ id: project._id, name: nextName, description: project.description });
+      toast.add({ type: "success", title: t("projectRenamed") });
+      setIsOpen(false);
+    } catch (renameError) {
+      setError(renameError instanceof Error ? renameError.message : t("couldNotSaveProject"));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <Popover
+      ariaLabel={t("renameProject")}
+      open={isOpen}
+      onOpenChange={handleOpenChange}
+      disabled={isSaving}
+      popupClassName="w-[min(22rem,calc(100vw-2rem))]"
+      popupHeight={224}
+      popupWidth={352}
+      trigger={(
+        <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-muted-foreground hover:bg-white/[0.07] hover:text-foreground" aria-label={`${t("renameProject")}: ${project.name}`}>
+          {t("renameProject")}
+        </Button>
+      )}
+      content={(
+        <form className="space-y-4" onSubmit={(event) => void handleSubmit(event)}>
+          <div>
+            <p className="text-sm font-semibold text-foreground">{t("renameProject")}</p>
+            <p className="mt-1 text-sm leading-5 text-muted-foreground">{t("projectNameHelp")}</p>
+          </div>
+          <label className="block space-y-2 text-sm font-medium" htmlFor={`rename-project-${project._id}`}>
+            {t("projectName")}
+            <Input id={`rename-project-${project._id}`} value={name} onChange={(event) => setName(event.target.value)} maxLength={80} autoFocus disabled={isSaving} />
+          </label>
+          {error !== null ? <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">{error}</p> : null}
+          <div className="flex justify-end gap-2 border-t border-white/[0.08] pt-4">
+            <Button type="button" size="sm" variant="ghost" className="bg-white/[0.06] hover:bg-white/[0.11]" onClick={() => handleOpenChange(false)} disabled={isSaving}>{t("cancel")}</Button>
+            <Button type="submit" size="sm" className="workspace-primary-action" disabled={isSaving}>{isSaving ? t("saving") : t("confirm")}</Button>
+          </div>
+        </form>
+      )}
+    />
+  );
+}
+
+function DeleteProjectButton({ project }: { project: Project }) {
+  const { t } = useLanguage();
+  const removeProject = useMutation(api.projects.remove);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  async function handleDelete() {
+    setIsDeleting(true);
+    try {
+      await removeProject({ id: project._id });
+      toast.add({ type: "error", title: t("projectDeletedNamed").replace("{name}", project.name) });
+    } catch (deleteError) {
+      toast.add({ type: "error", title: deleteError instanceof Error ? deleteError.message : t("couldNotDeleteProject"), priority: "high" });
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
+  return (
+    <PopConfirm
+      title={t("deleteProject")}
+      description={t("deleteProjectConfirm")}
+      confirmLabel={isDeleting ? t("deleting") : t("confirm")}
+      cancelLabel={t("cancel")}
+      disabled={isDeleting}
+      onConfirm={handleDelete}
+      trigger={<Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-destructive hover:bg-destructive/10 hover:text-destructive" disabled={isDeleting} aria-label={`${t("deleteProject")}: ${project.name}`}>{t("deleteProject")}</Button>}
+    />
+  );
+}
+
+function NewProjectCard({ onClick }: { onClick: () => void }) {
+  const { t } = useLanguage();
+
+  return (
+    <button type="button" className="group flex min-h-44 w-full flex-col items-start justify-between rounded-xl border border-dashed border-primary/40 bg-primary/[0.05] p-6 text-left transition-colors hover:border-primary hover:bg-primary/[0.1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.99]" onClick={onClick}>
+      <span className="flex size-10 items-center justify-center rounded-lg border border-primary/40 bg-primary/10 text-2xl font-light text-primary" aria-hidden="true">+</span>
+      <span>
+        <span className="block text-lg font-semibold">{t("newProject")}</span>
+        <span className="mt-1 block text-sm text-muted-foreground">{t("newProjectCardDescription")}</span>
+      </span>
+    </button>
+  );
+}
+
+function ProjectSkeleton() {
+  return <div className="workspace-glass-surface h-48 animate-pulse rounded-xl border" aria-hidden="true" />;
+}
+
+export function ProjectsDashboard({ initialCreateOpen = false }: { initialCreateOpen?: boolean }) {
+  const { language, t } = useLanguage();
+  const projects = useQuery(api.projects.list);
+  const reorderProjects = useMutation(api.projects.reorder);
+  const [isCreateOpen, setIsCreateOpen] = useState(initialCreateOpen);
+  const [draggingProjectId, setDraggingProjectId] = useState<Project["_id"] | null>(null);
+  const [dropTargetProjectId, setDropTargetProjectId] = useState<Project["_id"] | null>(null);
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!initialCreateOpen) return;
+
+    router.replace("/dashboard/projects", { scroll: false });
+  }, [initialCreateOpen, router]);
+
+  function handleDragStart(projectId: Project["_id"]) {
+    setDraggingProjectId(projectId);
+  }
+
+  function handleDragEnd() {
+    setDraggingProjectId(null);
+    setDropTargetProjectId(null);
+  }
+
+  function handleDragTargetChange(projectId: Project["_id"] | null) {
+    setDropTargetProjectId((currentProjectId) => currentProjectId === projectId ? currentProjectId : projectId);
+  }
+
+  async function handleDrop(sourceProjectId: Project["_id"], targetProjectId: Project["_id"]) {
+    setDraggingProjectId(null);
+    setDropTargetProjectId(null);
+
+    if (projects === undefined || sourceProjectId === targetProjectId) return;
+
+    const sourceIndex = projects.findIndex((project) => project._id === sourceProjectId);
+    const targetIndex = projects.findIndex((project) => project._id === targetProjectId);
+    if (sourceIndex === -1 || targetIndex === -1) return;
+
+    const reorderedProjects = [...projects];
+    [reorderedProjects[sourceIndex], reorderedProjects[targetIndex]] = [reorderedProjects[targetIndex], reorderedProjects[sourceIndex]];
+
+    try {
+      await reorderProjects({ projectIds: reorderedProjects.map((project) => project._id) });
+    } catch {
+      toast.add({ type: "error", title: t("couldNotReorderProjects"), priority: "high" });
+    }
+  }
+
+  return (
+    <section className="-mx-4 -my-7 flex h-[calc(100dvh-3.5rem)] flex-col px-4 py-7 sm:-mx-6 sm:px-6 lg:-mx-8 lg:-my-8 lg:px-8 lg:py-8 xl:-mx-10 xl:px-10" aria-labelledby="projects-page-title">
+      <div className="shrink-0 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+        <div>
+          <h1 id="projects-page-title" className="text-3xl font-semibold tracking-tight">{t("projectManagement")}</h1>
+          <p className="mt-2 max-w-2xl text-muted-foreground">{t("projectsDescription")}</p>
+        </div>
+        <Button type="button" className="workspace-primary-action transition-all" onClick={() => setIsCreateOpen(true)}>
+          <span aria-hidden="true" className="text-base leading-none">+</span>
+          {t("createProject")}
+        </Button>
+      </div>
+
+      <div className="mt-8 min-h-0 flex-1">
+      {projects === undefined ? (
+        <div className="grid h-full gap-5 md:grid-cols-2">
+          <ProjectSkeleton />
+          <ProjectSkeleton />
+          <ProjectSkeleton />
+        </div>
+      ) : projects.length === 0 ? (
+        <div className="grid gap-5 md:grid-cols-2">
+          <NewProjectCard onClick={() => setIsCreateOpen(true)} />
+        </div>
+      ) : (
+        <div className="flex h-full min-h-0 flex-col">
+          <p className="shrink-0 text-sm text-muted-foreground" aria-live="polite">{projects.length} {projects.length === 1 ? t("project") : t("projectsPlural")}</p>
+          <div className="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-2 [scrollbar-gutter:stable]">
+          <div className="grid gap-5 py-4 md:grid-cols-2">
+            <NewProjectCard onClick={() => setIsCreateOpen(true)} />
+            {projects.map((project) => (
+              <ProjectCard
+                key={project._id}
+                project={project}
+                language={language}
+                draggingProjectId={draggingProjectId}
+                dropTargetProjectId={dropTargetProjectId}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+                onDragTargetChange={handleDragTargetChange}
+                onDrop={handleDrop}
+              />
+            ))}
+          </div>
+          </div>
+        </div>
+      )}
+      </div>
+
+      <Modal open={isCreateOpen} onClose={() => setIsCreateOpen(false)} ariaLabel={t("newProject")} closeLabel={t("close")}>
+        <ProjectForm onCreated={() => setIsCreateOpen(false)} />
+      </Modal>
+    </section>
+  );
+}

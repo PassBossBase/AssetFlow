@@ -1,0 +1,528 @@
+@import "tailwindcss";
+@import "../components/ui/border-glow.css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: oklch(0.985 0.002 247);
+  --foreground: oklch(0.18 0.02 260);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.02 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.02 260);
+  --primary: oklch(0.52 0.2 264);
+  --primary-foreground: oklch(0.98 0.01 264);
+  --secondary: oklch(0.95 0.01 260);
+  --secondary-foreground: oklch(0.25 0.03 260);
+  --muted: oklch(0.95 0.008 260);
+  --muted-foreground: oklch(0.48 0.025 260);
+  --accent: oklch(0.94 0.025 264);
+  --accent-foreground: oklch(0.28 0.1 264);
+  --destructive: oklch(0.58 0.22 27);
+  --border: oklch(0.9 0.012 260);
+  --input: oklch(0.9 0.012 260);
+  --ring: oklch(0.62 0.16 264);
+  --radius: 0.75rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: oklch(0.16 0.02 260);
+    --foreground: oklch(0.95 0.01 260);
+    --card: oklch(0.2 0.02 260);
+    --card-foreground: oklch(0.95 0.01 260);
+    --popover: oklch(0.2 0.02 260);
+    --popover-foreground: oklch(0.95 0.01 260);
+    --primary: oklch(0.7 0.16 264);
+    --primary-foreground: oklch(0.2 0.04 264);
+    --secondary: oklch(0.25 0.02 260);
+    --secondary-foreground: oklch(0.92 0.01 260);
+    --muted: oklch(0.25 0.02 260);
+    --muted-foreground: oklch(0.7 0.02 260);
+    --accent: oklch(0.28 0.06 264);
+    --accent-foreground: oklch(0.9 0.03 264);
+    --destructive: oklch(0.7 0.18 27);
+    --border: oklch(1 0 0 / 12%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.62 0.16 264);
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+* {
+  border-color: var(--border);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: "Segoe UI Variable", "PingFang SC", "Microsoft YaHei", sans-serif;
+  min-width: 320px;
+}
+
+.workspace-theme {
+  --background: #070b16;
+  --foreground: #f3f7ff;
+  --card: #0f172a;
+  --card-foreground: #f3f7ff;
+  --popover: #141f37;
+  --popover-foreground: #f3f7ff;
+  --primary: #38d9f5;
+  --primary-foreground: #06141b;
+  --secondary: #18233a;
+  --secondary-foreground: #e4edf9;
+  --muted: #131d31;
+  --muted-foreground: #93a3ba;
+  --accent: #152f40;
+  --accent-foreground: #e7f8fc;
+  --border: rgb(255 255 255 / 0.1);
+  --input: rgb(255 255 255 / 0.12);
+  --ring: #38d9f5;
+  font-family: "Segoe UI Variable", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+.auth-page-shell {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: #122233 url("/images/auth-bridge-night.jpg") center / cover no-repeat;
+}
+
+.auth-page-backdrop {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgb(6 15 25 / 0.14) 0%, rgb(6 15 25 / 0.08) 48%, rgb(5 12 22 / 0.52) 100%),
+    linear-gradient(180deg, rgb(5 13 23 / 0.1) 0%, rgb(5 13 23 / 0.28) 100%);
+}
+
+.auth-form-pane {
+  border-left: 1px solid rgb(255 255 255 / 0.1);
+  background: linear-gradient(135deg, rgb(5 15 27 / 0.24), rgb(6 19 31 / 0.42));
+  box-shadow: -24px 0 64px rgb(3 9 17 / 0.14), inset 1px 0 0 rgb(255 255 255 / 0.035);
+  -webkit-backdrop-filter: blur(20px) saturate(112%);
+  backdrop-filter: blur(20px) saturate(112%);
+}
+
+.home-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: #07111d;
+}
+
+.home-hero-scrim {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgb(3 11 20 / 0.08) 0%, rgb(3 11 20 / 0.1) 43%, rgb(4 12 22 / 0.7) 64%, rgb(4 12 22 / 0.92) 100%),
+    linear-gradient(180deg, rgb(4 12 22 / 0.08) 0%, rgb(4 12 22 / 0.38) 100%);
+}
+
+@keyframes ambient-orb-drift-primary {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+
+  50% {
+    transform: translate3d(6vw, -4vh, 0) scale(1.06);
+  }
+}
+
+@keyframes ambient-orb-drift-secondary {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+
+  50% {
+    transform: translate3d(-5vw, 5vh, 0) scale(0.94);
+  }
+}
+
+@keyframes ambient-orb-drift-tertiary {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+
+  50% {
+    transform: translate3d(-3vw, -5vh, 0);
+  }
+}
+
+.ambient-light {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  contain: paint;
+}
+
+.ambient-light::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgb(4 8 20 / 0.08), transparent 42%, rgb(8 5 24 / 0.12));
+  content: "";
+}
+
+.ambient-orb {
+  position: absolute;
+  display: block;
+  border-radius: 9999px;
+  filter: blur(100px) saturate(115%);
+  mix-blend-mode: screen;
+  opacity: 0.24;
+  will-change: transform;
+}
+
+.ambient-orb-primary {
+  top: -20rem;
+  left: -12rem;
+  width: clamp(32rem, 52vw, 54rem);
+  height: clamp(32rem, 52vw, 54rem);
+  background: radial-gradient(circle, rgb(37 99 235 / 0.48) 0%, rgb(124 58 237 / 0.24) 34%, transparent 72%);
+  animation: ambient-orb-drift-primary 24s ease-in-out infinite;
+}
+
+.ambient-orb-secondary {
+  right: -15rem;
+  bottom: -20rem;
+  width: clamp(28rem, 46vw, 48rem);
+  height: clamp(28rem, 46vw, 48rem);
+  background: radial-gradient(circle, rgb(6 182 212 / 0.4) 0%, rgb(59 130 246 / 0.2) 36%, transparent 72%);
+  animation: ambient-orb-drift-secondary 28s ease-in-out infinite;
+}
+
+.ambient-orb-tertiary {
+  top: 30%;
+  right: 24%;
+  width: clamp(18rem, 30vw, 34rem);
+  height: clamp(18rem, 30vw, 34rem);
+  background: radial-gradient(circle, rgb(217 70 239 / 0.22) 0%, rgb(99 102 241 / 0.12) 38%, transparent 72%);
+  animation: ambient-orb-drift-tertiary 22s ease-in-out infinite;
+}
+
+.ambient-light--marketing .ambient-orb {
+  opacity: 0.34;
+}
+
+.ambient-light--marketing .ambient-orb-tertiary {
+  top: 36%;
+  right: 30%;
+}
+
+.ambient-light--auth .ambient-orb {
+  opacity: 0.2;
+}
+
+.ambient-light--auth .ambient-orb-primary {
+  top: -16rem;
+  left: -18rem;
+  width: clamp(28rem, 44vw, 44rem);
+  height: clamp(28rem, 44vw, 44rem);
+}
+
+.ambient-light--auth .ambient-orb-secondary {
+  right: -16rem;
+  bottom: -18rem;
+  width: clamp(24rem, 38vw, 40rem);
+  height: clamp(24rem, 38vw, 40rem);
+}
+
+.ambient-light--workspace .ambient-orb {
+  filter: blur(124px) saturate(95%);
+  opacity: 0.07;
+  animation: none;
+}
+
+.ambient-light--workspace .ambient-orb-primary {
+  top: -24rem;
+  left: -18rem;
+}
+
+.ambient-light--workspace .ambient-orb-secondary {
+  right: -20rem;
+  bottom: -24rem;
+}
+
+.ambient-light--workspace .ambient-orb-tertiary {
+  display: none;
+}
+
+.ambient-light--workspace::after {
+  background: linear-gradient(120deg, rgb(5 10 28 / 0.12), transparent 48%, rgb(9 7 26 / 0.1));
+}
+
+.workspace-shell-chrome {
+  border-color: rgb(255 255 255 / 0.08);
+  background: rgb(7 12 23 / 0.9);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035);
+}
+
+.glass-panel {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 1rem;
+  background: rgb(13 23 39 / 0.88);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.045);
+}
+
+.glass-panel--subtle {
+  background: rgb(11 20 34 / 0.78);
+}
+
+.glass-panel--card {
+  box-shadow: 0 12px 32px rgb(2 6 23 / 0.14), inset 0 1px 0 rgb(255 255 255 / 0.045);
+}
+
+.glass-panel--emphasis {
+  border-color: rgb(103 232 249 / 0.3);
+  background: linear-gradient(135deg, rgb(13 42 57 / 0.94), rgb(10 24 39 / 0.94));
+  box-shadow: 0 14px 36px rgb(2 6 23 / 0.18), inset 0 1px 0 rgb(255 255 255 / 0.07);
+}
+
+.workspace-glass-surface {
+  border-color: rgb(255 255 255 / 0.1);
+  border-radius: 1rem;
+  background: rgb(12 22 37 / 0.92);
+  box-shadow: 0 10px 28px rgb(2 6 23 / 0.14), inset 0 1px 0 rgb(255 255 255 / 0.045);
+}
+
+.workspace-glass-surface:hover {
+  border-color: rgb(125 211 252 / 0.22);
+  background: rgb(15 29 47 / 0.96);
+}
+
+.workspace-primary-action {
+  border-color: rgb(165 243 252 / 0.56);
+  background: rgb(56 217 245);
+  color: rgb(6 20 27);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.3), 0 6px 18px rgb(8 145 178 / 0.18);
+}
+
+.workspace-primary-action:hover {
+  border-color: rgb(236 254 255 / 0.86);
+  background: rgb(103 232 249);
+  color: rgb(6 20 27);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.38), 0 8px 22px rgb(8 145 178 / 0.22);
+}
+
+.workspace-primary-action:active {
+  transform: scale(0.98);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .auth-page-backdrop {
+    background: rgb(5 15 27 / 0.38);
+  }
+
+  .auth-form-pane {
+    background: #091624;
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .workspace-shell-chrome,
+  .glass-panel {
+    background: #0f172a;
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .workspace-glass-surface {
+    background: color-mix(in oklch, var(--card) 94%, transparent);
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .workspace-primary-action {
+    background: rgb(56 217 245);
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .ambient-orb {
+    filter: blur(64px) saturate(110%);
+  }
+
+  .ambient-orb-primary,
+  .ambient-orb-secondary {
+    width: 26rem;
+    height: 26rem;
+  }
+
+  .ambient-light--marketing .ambient-orb-tertiary,
+  .ambient-light--workspace .ambient-orb-tertiary {
+    display: none;
+  }
+
+  .ambient-light--marketing .ambient-orb {
+    opacity: 0.24;
+  }
+
+  .ambient-light--workspace .ambient-orb {
+    filter: blur(72px) saturate(100%);
+    opacity: 0.11;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ambient-orb {
+    animation: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .ambient-orb {
+    filter: none;
+    mix-blend-mode: normal;
+    opacity: 0.08;
+  }
+
+  .ambient-light::after {
+    background: rgb(10 15 30 / 0.04);
+  }
+}
+
+button,
+a,
+input,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+
+@keyframes text-type-caret {
+  0%,
+  49.999% {
+    visibility: visible;
+  }
+
+  50%,
+  100% {
+    visibility: hidden;
+  }
+}
+
+.text-type-caret {
+  animation: text-type-caret 900ms steps(1, end) infinite;
+}
+
+.form-control {
+  border-color: rgb(255 255 255 / 0.12);
+  background-color: rgb(8 14 27 / 0.78);
+  color: var(--foreground);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.03);
+}
+
+.form-control::placeholder {
+  color: var(--muted-foreground);
+}
+
+.auth-input {
+  border: 0;
+  border-bottom: 1px solid rgb(255 255 255 / 0.5);
+  border-radius: 0;
+  background-color: transparent;
+  box-shadow: none;
+}
+
+.auth-input:focus-visible {
+  border-bottom-color: rgb(207 250 254);
+}
+
+.form-control:-webkit-autofill,
+.form-control:-webkit-autofill:hover,
+.form-control:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--foreground);
+  caret-color: var(--foreground);
+  -webkit-box-shadow: 0 0 0 1000px rgb(8 14 27 / 0.78) inset;
+  transition: background-color 9999s ease-out 0s;
+}
+
+.auth-input:-webkit-autofill,
+.auth-input:-webkit-autofill:hover,
+.auth-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--foreground);
+  -webkit-box-shadow: 0 0 0 1000px transparent inset;
+}
+
+@media (prefers-color-scheme: light) {
+  .form-control {
+    border-color: rgb(15 23 42 / 0.16);
+    background-color: rgb(255 255 255 / 0.78);
+    color: var(--foreground);
+  }
+
+  .form-control:-webkit-autofill,
+  .form-control:-webkit-autofill:hover,
+  .form-control:-webkit-autofill:focus {
+    -webkit-box-shadow: 0 0 0 1000px rgb(255 255 255 / 0.78) inset;
+  }
+}
+
+/* Keep glass surfaces working in browsers that still require the WebKit prefix. */
+.backdrop-blur-md {
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+.backdrop-blur-lg {
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+
+.backdrop-blur-xl {
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .backdrop-blur-xl,
+  .backdrop-blur-lg,
+  .backdrop-blur-md {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background-color: color-mix(in oklch, var(--card) 96%, transparent);
+  }
+}
