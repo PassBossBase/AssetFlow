@@ -110,7 +110,6 @@ function RecentProjects({ projects }: { projects: Project[] }) {
               <FolderOpen className="size-5" strokeWidth={1.6} />
             </span>
             <p className="mt-5 text-xl font-semibold tracking-[-0.03em]">{t("noProjects")}</p>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">{t("noProjectsDescription")}</p>
           </div>
         </div>
       ) : (

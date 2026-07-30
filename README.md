@@ -26,6 +26,50 @@ AssetFlow AI 是面向开发者、设计师和游戏开发者的数字资产工�
 - 图片、SVG、GIF 支持在线预览；GLB / GLTF 支持浏览器内旋转和缩放预览。
 - 素材详情页提供预览、元数据和直接重命名操作。
 
+## 界面预览
+
+以下截图展示当前可用的主要流程；账户标识已使用示例信息或脱敏处理。
+
+### 入口与账户
+
+<table>
+  <tr>
+    <td width="50%"><strong>首页</strong><br /><img src="public/demo/landing-page.webp" alt="AssetFlow AI 首页" /></td>
+    <td width="50%"><strong>登录页</strong><br /><img src="public/demo/sign-in.webp" alt="AssetFlow AI 登录页" /></td>
+  </tr>
+</table>
+
+### 工作台与项目
+
+<table>
+  <tr>
+    <td width="50%"><strong>工作台</strong><br /><img src="public/demo/dashboard-overview.webp" alt="工作台概览与最近素材" /></td>
+    <td width="50%"><strong>项目管理</strong><br /><img src="public/demo/projects.webp" alt="项目管理页面" /></td>
+  </tr>
+</table>
+
+### 项目与素材流程
+
+<table>
+  <tr>
+    <td width="50%"><strong>项目详情</strong><br /><img src="public/demo/project-assets-upload.webp" alt="项目详情与上传素材" /></td>
+    <td width="50%"><strong>素材列表</strong><br /><img src="public/demo/project-assets-list.webp" alt="项目中的素材列表" /></td>
+  </tr>
+  <tr>
+    <td width="50%"><strong>素材详情</strong><br /><img src="public/demo/asset-detail.webp" alt="素材预览与信息详情" /></td>
+    <td width="50%"><strong>个人中心</strong><br /><img src="public/demo/profile-settings.webp" alt="个人资料与语言偏好设置" /></td>
+  </tr>
+</table>
+
+### 空状态
+
+<table>
+  <tr>
+    <td width="50%"><strong>工作台空状态</strong><br /><img src="public/demo/dashboard-empty.webp" alt="没有项目和素材时的工作台" /></td>
+    <td width="50%"><strong>项目管理空状态</strong><br /><img src="public/demo/projects-empty.webp" alt="没有项目时的项目管理页面" /></td>
+  </tr>
+</table>
+
 ## 已知限制
 
 - 独立 GLTF 如果依赖外部 `.bin` 或纹理文件，无法保证完整预览。

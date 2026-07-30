@@ -179,14 +179,13 @@ function ProfileSettingsForm({ identity }: { identity: CurrentUser }) {
 
           <div className="grid gap-5 sm:grid-cols-2">
             <label className="space-y-2 text-sm font-medium" htmlFor="profile-display-name">
-              {t("displayNameLabel")}
+              <span className="flex h-5 items-center">{t("displayNameLabel")}</span>
               <Input id="profile-display-name" value={displayName} maxLength={80} disabled={isSaving} onChange={(event) => setDisplayName(event.target.value)} />
               <span className="block text-xs font-normal leading-5 text-muted-foreground">{t("displayNameHelp")}</span>
             </label>
             <div className="space-y-2 text-sm font-medium">
               <span className="flex items-center gap-2"><Mail className="size-4 text-muted-foreground" aria-hidden="true" />{t("email")}</span>
-              <div className="flex h-10 items-center rounded-md border border-white/[0.1] bg-white/[0.035] px-3 text-sm text-muted-foreground">{identity.email ?? "—"}</div>
-              <span className="block text-xs font-normal leading-5 text-muted-foreground">{t("emailReadOnly")}</span>
+              <div className="flex h-10 cursor-not-allowed items-center rounded-md border border-white/[0.1] bg-white/[0.035] px-3 text-sm text-muted-foreground transition-colors hover:border-white/[0.16] hover:bg-white/[0.05]" aria-disabled="true">{identity.email ?? "—"}</div>
             </div>
           </div>
 
