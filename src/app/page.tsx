@@ -54,8 +54,17 @@ export default function HomePage() {
         <div className="hidden lg:block" />
         <section className="flex items-end px-6 py-20 sm:px-10 lg:items-center lg:px-14 xl:px-20" aria-labelledby="home-title">
           <div className="max-w-xl">
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-100/85">AssetFlow AI</p>
-            <h1 id="home-title" className="mt-5 text-4xl font-semibold leading-[1.04] tracking-[-0.055em] text-white sm:text-5xl xl:text-6xl">{t("landingTitle")}</h1>
+            <div className="flex items-start gap-3 sm:gap-4">
+              <Image
+                src="/images/icon.svg"
+                alt=""
+                width={48}
+                height={48}
+                className="size-[3.9rem] shrink-0 scale-[1.25]"
+                priority
+              />
+              <h1 id="home-title" className="text-4xl font-semibold leading-[1.04] tracking-[-0.055em] text-white sm:text-5xl xl:text-6xl">{t("landingTitle")}</h1>
+            </div>
             <div className="mt-5 min-h-24 max-w-lg sm:min-h-28">
               <p className="text-xl font-semibold leading-snug tracking-[-0.035em] text-white sm:text-2xl">
                 <TextType

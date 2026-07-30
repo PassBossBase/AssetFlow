@@ -10,6 +10,9 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "AssetFlow AI",
   description: "Digital Asset Management Platform",
+  icons: {
+    icon: "/images/icon.svg",
+  },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

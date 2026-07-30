@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>数字资产管理平台</title>
+  <desc>以资产中枢统一管理图片、矢量、动图和三维模型的图标</desc>
+
+  <!-- 资产与中枢之间的连接，覆盖 PNG/JPG/WEBP、SVG、GIF、GLB/GLTF 等类型 -->
+  <g stroke="#92D6F6" stroke-width="14" stroke-linecap="round">
+    <path d="M177 150C200 162 211 177 222 199"/>
+    <path d="M335 150C315 164 304 179 292 200"/>
+    <path d="M177 345C199 335 212 322 224 306"/>
+    <path d="M335 345C314 334 303 321 290 306"/>
+  </g>
+
+  <!-- 图片素材：PNG / JPG / WEBP -->
+  <g stroke="#1296DB" stroke-width="15" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="57" y="80" width="125" height="88" rx="20"/>
+    <path d="M78 145L108 116L133 139L150 122L174 147"/>
+    <circle cx="151" cy="103" r="8" fill="#1296DB" stroke="none"/>
+  </g>
+
+  <!-- 矢量素材：SVG -->
+  <g stroke="#1296DB" stroke-width="14" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M356 81L403 125L356 169L309 125L356 81Z"/>
+    <circle cx="356" cy="81" r="8" fill="#1296DB" stroke="none"/>
+    <circle cx="403" cy="125" r="8" fill="#1296DB" stroke="none"/>
+    <circle cx="356" cy="169" r="8" fill="#1296DB" stroke="none"/>
+    <circle cx="309" cy="125" r="8" fill="#1296DB" stroke="none"/>
+  </g>
+
+  <!-- 动态素材：GIF -->
+  <g stroke="#1296DB" stroke-width="14" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="61" y="303" width="84" height="64" rx="16" opacity="0.42"/>
+    <rect x="78" y="323" width="84" height="64" rx="16" opacity="0.7"/>
+    <rect x="96" y="343" width="84" height="64" rx="16" fill="#1296DB" stroke="none"/>
+    <path d="M128 359L128 391L153 375L128 359Z" fill="white" stroke="none"/>
+  </g>
+
+  <!-- 三维素材：GLB / GLTF -->
+  <g stroke="#1296DB" stroke-width="14" stroke-linejoin="round">
+    <path d="M355 317L408 347V405L355 435L302 405V347L355 317Z" fill="#1296DB"/>
+    <path d="M302 347L355 377L408 347M355 377V435" stroke="white" stroke-linecap="round"/>
+  </g>
+
+  <!-- 数字资产管理中枢 -->
+  <path d="M147 207C147 188 162 173 181 173H234L257 196H331C349 196 364 211 364 230V321C364 340 349 355 330 355H181C162 355 147 340 147 321V207Z" fill="#1296DB"/>
+  <path d="M147 224H364V321C364 340 349 355 330 355H181C162 355 147 340 147 321V224Z" fill="#168FCE"/>
+  <g fill="white">
+    <rect x="178" y="253" width="54" height="18" rx="9"/>
+    <rect x="178" y="294" width="86" height="18" rx="9" opacity="0.92"/>
+    <rect x="283" y="253" width="50" height="59" rx="13" opacity="0.95"/>
+  </g>
+</svg>

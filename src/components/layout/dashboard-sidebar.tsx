@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { CircleUserRound, FolderKanban, LayoutDashboard } from "lucide-react";
 import { useLanguage } from "@/components/language-provider";
@@ -18,10 +19,21 @@ export function DashboardSidebar() {
     <aside className="workspace-shell-chrome relative z-20 border-b px-4 py-4 md:fixed md:inset-y-0 md:left-0 md:flex md:w-56 md:flex-col md:border-r md:px-5 md:py-6">
       <div className="flex items-center justify-between gap-4 md:block">
         <div>
-          <Link href="/dashboard" className="text-lg font-semibold tracking-[-0.035em]">
-            AssetFlow AI
+          <Link
+            href="/dashboard"
+            className="inline-flex items-center gap-2.5 text-lg font-semibold tracking-[-0.035em]"
+          >
+            <Image
+              src="/images/icon.svg"
+              alt=""
+              width={24}
+              height={24}
+              className="size-6 shrink-0"
+              priority
+            />
+            <span>AssetFlow AI</span>
           </Link>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">{t("digitalAssetWorkspace")}</p>
+          <p className="mt-1 ml-[34px] text-xs leading-5 text-muted-foreground">{t("digitalAssetWorkspace")}</p>
         </div>
         <nav className="text-sm md:mt-10" aria-label="Dashboard navigation">
           <div className="flex gap-2 md:block md:space-y-2">
