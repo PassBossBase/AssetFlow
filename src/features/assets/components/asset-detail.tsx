@@ -144,14 +144,14 @@ export function AssetDetail({ id }: { id: string }) {
   return (
     <main className="mx-auto w-full max-w-[96rem] px-4 py-7 sm:px-6 sm:py-8 lg:px-10 lg:py-10 xl:px-12">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.1] pb-5">
-        <Button asChild className="shrink-0 bg-[#38d9f5] text-[#06141b] shadow-[0_8px_22px_rgb(56_217_245_/_0.18)] hover:bg-[#66e4fa] hover:text-[#06141b]">
+        <Button asChild className="shrink-0 border border-violet-500/80 bg-violet-700 text-white hover:bg-violet-800 hover:text-white">
           <Link href={`/project/${currentAsset.projectId}`}>
             <ArrowLeft className="size-4" aria-hidden="true" />
             {t("backToProject")}
           </Link>
         </Button>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          {downloadUrl ? <Button type="button" size="sm" className="bg-[#1688d8] text-white hover:bg-[#299be9] hover:text-white" onClick={() => void handleDownload()} disabled={isBusy || isDownloading}><Download className="size-4" aria-hidden="true" />{isDownloading ? t("downloading") : t("download")}</Button> : null}
+          {downloadUrl ? <Button type="button" size="sm" className="h-10 border border-blue-500/80 bg-blue-700 px-5 text-white hover:bg-blue-800 hover:text-white" onClick={() => void handleDownload()} disabled={isBusy || isDownloading}><Download className="size-4" aria-hidden="true" />{isDownloading ? t("downloading") : t("download")}</Button> : null}
           <PopConfirm
             title={t("remove")}
             description={t("deleteAssetConfirm")}
@@ -159,7 +159,7 @@ export function AssetDetail({ id }: { id: string }) {
             cancelLabel={t("cancel")}
             disabled={isBusy}
             onConfirm={handleRemove}
-            trigger={<Button type="button" size="sm" className="bg-[#dc4c4c] text-white hover:bg-[#eb6262] hover:text-white" disabled={isBusy}><Trash2 className="size-4" aria-hidden="true" />{t("remove")}</Button>}
+            trigger={<Button type="button" size="sm" className="h-10 border border-red-500/80 bg-red-700 px-5 text-white hover:bg-red-800 hover:text-white" disabled={isBusy}><Trash2 className="size-4" aria-hidden="true" />{t("remove")}</Button>}
           />
         </div>
       </header>

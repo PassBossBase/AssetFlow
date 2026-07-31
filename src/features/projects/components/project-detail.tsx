@@ -16,7 +16,7 @@ import { api, type Id, type Project } from "@/lib/convex";
 import { projectSchema } from "@/features/projects/lib/validation";
 import { ProjectAssetsPanel } from "@/features/assets/components/project-assets-panel";
 
-const backToProjectsButtonClassName = "bg-[#38d9f5] text-[#06141b] shadow-[0_8px_22px_rgb(56_217_245_/_0.18)] hover:bg-[#66e4fa] hover:text-[#06141b]";
+const backToProjectsButtonClassName = "border border-violet-500/80 bg-violet-700 text-white hover:bg-violet-800 hover:text-white";
 
 function ProjectEditor({ id, project }: { id: Id<"projects">; project: Project }) {
   const { t } = useLanguage();
@@ -147,7 +147,11 @@ export function ProjectDetail({ id }: { id: string }) {
   }
 
   if (project === undefined) {
-    return <main className="mx-auto max-w-3xl px-6 py-12 text-sm text-muted-foreground">{t("loadingProject")}</main>;
+    return (
+      <main className="flex min-h-[calc(100dvh-3.5rem)] items-center justify-center px-6" aria-live="polite">
+        <p className="text-sm text-muted-foreground" role="status">{t("loadingProject")}</p>
+      </main>
+    );
   }
 
   if (project === null) {

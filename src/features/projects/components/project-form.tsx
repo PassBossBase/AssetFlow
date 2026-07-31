@@ -81,8 +81,8 @@ export function ProjectForm({ onCreated }: ProjectFormProps) {
           </label>
           {error !== null ? <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">{error}</p> : null}
           <div className="border-t border-white/[0.08] pt-5">
-            <Button type="submit" className="workspace-primary-action h-11 w-full" disabled={isSubmitting} aria-busy={isSubmitting}>
-              {isSubmitting ? t("creating") : t("createProject")}
+            <Button type="submit" className="h-11 w-full border border-blue-500/80 bg-blue-700 text-white shadow-[0_6px_18px_rgba(37,99,235,0.25)] hover:bg-blue-800 hover:text-white" disabled={isSubmitting} aria-busy={isSubmitting}>
+              {isSubmitting ? t("creating") : t("create")}
             </Button>
           </div>
         </form>

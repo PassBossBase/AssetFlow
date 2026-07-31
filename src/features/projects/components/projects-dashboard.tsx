@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
-import { AlertCircle, GripVertical, Images, Upload } from "lucide-react";
+import { AlertCircle, Check, ChevronDown, ChevronUp, File, FolderOpen, GripVertical, Images, Pencil, RotateCcw, Trash2, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -11,15 +11,38 @@ import { useLanguage } from "@/components/language-provider";
 import { toast } from "@/components/ui/toast";
 import { Modal } from "@/components/ui/modal";
 import { PopConfirm } from "@/components/ui/popconfirm";
-import { Popover } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
+import { AssetUploader } from "@/features/assets/components/asset-uploader";
 import { ProjectForm } from "@/features/projects/components/project-form";
-import { api, type Project } from "@/lib/convex";
+import { api, type Id, type Project } from "@/lib/convex";
+
+type RecentProjectAsset = {
+  _id: Id<"assets">;
+  extension: string;
+  name: string;
+  previewUrl: string | null;
+};
+
+type FailedUploadTask = {
+  _id: Id<"uploadTasks">;
+  fileName: string;
+  size: number;
+  status: "failed" | "interrupted";
+};
+
+type CompletedUploadNotice = {
+  count: number;
+  isDismissing: boolean;
+};
+
+type UploadEntrySource = "page" | "project-card";
 
 type ProjectWithAssetCount = Project & {
   assetCount: number;
+  recentAssets: RecentProjectAsset[];
   uploadSummary: {
     failedCount: number;
+    failedTasks: FailedUploadTask[];
     progress: number;
     uploadingCount: number;
   };
@@ -33,7 +56,10 @@ type ProjectCardProps = {
   onDragStart: (projectId: Project["_id"]) => void;
   onDragTargetChange: (projectId: Project["_id"] | null) => void;
   onDrop: (sourceProjectId: Project["_id"], targetProjectId: Project["_id"]) => void;
+  onOpenUpload: (projectId: Project["_id"]) => void;
+  onRemoveUploadTask: (taskId: Id<"uploadTasks">) => void;
   project: ProjectWithAssetCount;
+  completedUploadNotice?: CompletedUploadNotice;
 };
 
 function projectIdAtPoint(clientX: number, clientY: number): Project["_id"] | null {
@@ -65,7 +91,62 @@ function createProjectDragPreview(project: ProjectWithAssetCount, description: s
   return preview;
 }
 
-function ProjectCard({ draggingProjectId, dropTargetProjectId, language, onDragEnd, onDragStart, onDragTargetChange, onDrop, project }: ProjectCardProps) {
+function ProjectAssetPreview({ assetCount, assets, onUpload }: { assetCount: number; assets: RecentProjectAsset[]; onUpload: () => void }) {
+  const { t } = useLanguage();
+
+  if (assetCount === 0) {
+    return (
+      <button type="button" className="flex h-28 w-full items-center justify-center rounded-xl border border-dashed border-white/[0.12] bg-white/[0.018] text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/[0.045] hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={onUpload}>
+        <Upload className="mr-2 size-4" aria-hidden="true" />
+        {t("uploadAssets")}
+      </button>
+    );
+  }
+
+  if (assets.length === 1) {
+    return <div className="h-28 overflow-hidden rounded-xl" aria-label={t("recentAssets")}><ProjectAssetThumbnail asset={assets[0]} /></div>;
+  }
+
+  if (assets.length === 2) {
+    return <div className="grid h-28 grid-cols-2 gap-1.5 overflow-hidden rounded-xl" aria-label={t("recentAssets")}>{assets.map((asset) => <ProjectAssetThumbnail key={asset._id} asset={asset} />)}</div>;
+  }
+
+  if (assets.length === 3) {
+    return (
+      <div className="grid h-28 grid-cols-[2fr_1fr] gap-1.5 overflow-hidden rounded-xl" aria-label={t("recentAssets")}>
+        <ProjectAssetThumbnail asset={assets[0]} />
+        <div className="grid min-h-0 grid-rows-2 gap-1.5">
+          <ProjectAssetThumbnail asset={assets[1]} />
+          <ProjectAssetThumbnail asset={assets[2]} />
+        </div>
+      </div>
+    );
+  }
+
+  return <div className="grid h-28 grid-cols-4 gap-1.5 overflow-hidden rounded-xl" aria-label={t("recentAssets")}>{assets.map((asset) => <ProjectAssetThumbnail key={asset._id} asset={asset} />)}</div>;
+}
+
+function ProjectAssetThumbnail({ asset }: { asset: RecentProjectAsset }) {
+  const [hasPreviewError, setHasPreviewError] = useState(false);
+  const previewUrl = hasPreviewError ? null : asset.previewUrl;
+
+  return (
+    <div className="min-w-0 overflow-hidden rounded-lg border border-white/[0.07] bg-[#0a1320]">
+      {previewUrl !== null ? (
+        // Convex storage URLs are user-scoped and short-lived, so this thumbnail intentionally bypasses Next's image optimizer.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img className="size-full object-cover" src={previewUrl} alt={asset.name} loading="lazy" onError={() => setHasPreviewError(true)} />
+      ) : (
+        <div className="flex size-full flex-col items-center justify-center gap-1 text-muted-foreground">
+          <File className="size-5 text-primary/75" aria-hidden="true" />
+          <span className="max-w-full truncate px-2 text-[10px] font-medium uppercase">{asset.extension}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProjectCard({ completedUploadNotice, draggingProjectId, dropTargetProjectId, language, onDragEnd, onDragStart, onDragTargetChange, onDrop, onOpenUpload, onRemoveUploadTask, project }: ProjectCardProps) {
   const createdAt = new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en", { dateStyle: "medium" }).format(project.createdAt);
   const { t } = useLanguage();
   const router = useRouter();
@@ -77,7 +158,7 @@ function ProjectCard({ draggingProjectId, dropTargetProjectId, language, onDragE
   const isDragging = draggingProjectId === project._id;
   const isDropTarget = dropTargetProjectId === project._id && !isDragging;
   const hasUploadingTasks = project.uploadSummary.uploadingCount > 0;
-  const hasFailedTasks = !hasUploadingTasks && project.uploadSummary.failedCount > 0;
+  const hasFailedTasks = project.uploadSummary.failedCount > 0;
   const uploadProgressLabel = t("uploadInProgress")
     .replace("{count}", String(project.uploadSummary.uploadingCount))
     .replace("{progress}", String(project.uploadSummary.progress));
@@ -177,7 +258,7 @@ function ProjectCard({ draggingProjectId, dropTargetProjectId, language, onDragE
     >
       <CardHeader className="p-5 pb-4">
         <div className="flex items-start justify-between gap-3">
-          <CardTitle className="min-w-0 flex-1 truncate">{project.name}</CardTitle>
+          <InlineProjectNameEditor project={project} />
           <div className="flex shrink-0 items-center gap-1.5">
             <span className="inline-flex items-center gap-1 rounded-md border border-primary/20 bg-primary/[0.07] px-2 py-1 text-xs font-medium text-primary" title={`${project.assetCount} ${t("assetCount")}`}>
               <Images className="size-3.5" aria-hidden="true" />
@@ -185,7 +266,7 @@ function ProjectCard({ draggingProjectId, dropTargetProjectId, language, onDragE
             </span>
             <button
               type="button"
-              className="-mr-1 -mt-1 inline-flex size-8 shrink-0 cursor-grab items-center justify-center rounded-md text-muted-foreground/65 transition-colors hover:bg-white/[0.07] hover:text-primary active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="-mr-1 -mt-1 inline-flex h-8 w-10 shrink-0 cursor-grab items-center justify-center rounded-md text-muted-foreground/65 transition-colors hover:bg-white/[0.07] hover:text-primary active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               aria-label={`${t("dragToReorderProject")}: ${project.name}`}
               title={t("dragToReorderProject")}
               onClick={(event) => event.stopPropagation()}
@@ -206,17 +287,53 @@ function ProjectCard({ draggingProjectId, dropTargetProjectId, language, onDragE
               </span>
             </div>
           ) : null}
-          {hasFailedTasks ? (
-            <p className="mt-2 flex items-center gap-1.5 text-[11px] font-medium text-destructive">
-              <AlertCircle className="size-3 shrink-0" aria-hidden="true" />
-              {t("uploadsFailed").replace("{count}", String(project.uploadSummary.failedCount))}
+          {completedUploadNotice !== undefined ? (
+            <p className={`mt-2 flex items-center gap-1.5 text-[11px] font-medium text-emerald-400 transition-[opacity,transform] duration-300 motion-reduce:transition-none ${completedUploadNotice.isDismissing ? "-translate-y-1 opacity-0" : "translate-y-0 opacity-100"}`}>
+              <Check className="size-3 shrink-0" aria-hidden="true" />
+              {t("uploadCompleteCard").replace("{count}", String(completedUploadNotice.count))}
             </p>
           ) : null}
         </div>
       </CardHeader>
+      <CardContent className="space-y-3 px-5 pb-4">
+        <ProjectAssetPreview assets={project.recentAssets} assetCount={project.assetCount} onUpload={() => onOpenUpload(project._id)} />
+        {hasFailedTasks ? (
+          <div className="space-y-2 rounded-xl border border-destructive/25 bg-destructive/[0.055] p-3">
+            <p className="flex items-center gap-1.5 text-xs font-medium text-destructive">
+              <AlertCircle className="size-3.5 shrink-0" aria-hidden="true" />
+              {t("uploadsFailed").replace("{count}", String(project.uploadSummary.failedCount))}
+            </p>
+            {project.uploadSummary.failedTasks.map((task) => (
+              <div key={task._id} className="flex items-center justify-between gap-3 rounded-lg bg-background/30 px-2.5 py-2">
+                <span className="min-w-0 truncate text-xs text-muted-foreground">{task.fileName}</span>
+                <span className="flex shrink-0 items-center gap-1">
+                  <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-primary hover:bg-primary/[0.1] hover:text-primary" onClick={() => onOpenUpload(project._id)}>
+                    <RotateCcw className="size-3.5" aria-hidden="true" />
+                    {t("retryUpload")}
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" onClick={() => onRemoveUploadTask(task._id)}>
+                    <Trash2 className="size-3.5" aria-hidden="true" />
+                    {t("deleteUploadTask")}
+                  </Button>
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </CardContent>
       <CardContent className="flex items-center justify-between border-t border-white/[0.08] px-5 py-3.5">
         <span className="text-xs text-muted-foreground">{createdAt}</span>
         <span className="flex flex-wrap items-center justify-end gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 px-2 text-muted-foreground hover:bg-white/[0.07] hover:text-primary"
+            onClick={(event) => { event.stopPropagation(); onOpenUpload(project._id); }}
+          >
+            <Upload className="size-3.5" aria-hidden="true" />
+            {t("uploadAssets")}
+          </Button>
           <Button
             type="button"
             variant="ghost"
@@ -227,7 +344,6 @@ function ProjectCard({ draggingProjectId, dropTargetProjectId, language, onDragE
           >
             {t("openProject")}
           </Button>
-          <RenameProjectButton project={project} />
           <DeleteProjectButton project={project} />
         </span>
       </CardContent>
@@ -236,23 +352,19 @@ function ProjectCard({ draggingProjectId, dropTargetProjectId, language, onDragE
   );
 }
 
-function RenameProjectButton({ project }: { project: Project }) {
+function InlineProjectNameEditor({ project }: { project: Project }) {
   const { t } = useLanguage();
   const updateProject = useMutation(api.projects.update);
-  const [isOpen, setIsOpen] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(project.name);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  function handleOpenChange(open: boolean) {
+  function cancelEditing() {
     if (isSaving) return;
-
-    if (open) {
-      setName(project.name);
-      setError(null);
-    }
-
-    setIsOpen(open);
+    setName(project.name);
+    setError(null);
+    setIsEditing(false);
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -270,7 +382,7 @@ function RenameProjectButton({ project }: { project: Project }) {
     }
 
     if (nextName === project.name) {
-      setIsOpen(false);
+      cancelEditing();
       return;
     }
 
@@ -279,7 +391,7 @@ function RenameProjectButton({ project }: { project: Project }) {
     try {
       await updateProject({ id: project._id, name: nextName, description: project.description });
       toast.add({ type: "success", title: t("projectRenamed") });
-      setIsOpen(false);
+      setIsEditing(false);
     } catch (renameError) {
       setError(renameError instanceof Error ? renameError.message : t("couldNotSaveProject"));
     } finally {
@@ -287,38 +399,49 @@ function RenameProjectButton({ project }: { project: Project }) {
     }
   }
 
-  return (
-    <Popover
-      ariaLabel={t("renameProject")}
-      open={isOpen}
-      onOpenChange={handleOpenChange}
-      disabled={isSaving}
-      popupClassName="w-[min(22rem,calc(100vw-2rem))]"
-      popupHeight={224}
-      popupWidth={352}
-      trigger={(
-        <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-muted-foreground hover:bg-white/[0.07] hover:text-foreground" aria-label={`${t("renameProject")}: ${project.name}`}>
-          {t("renameProject")}
+  if (!isEditing) {
+    return (
+      <div className="flex min-w-0 flex-1 items-center gap-1">
+        <CardTitle className="min-w-0 flex-1 truncate">{project.name}</CardTitle>
+        <Button type="button" variant="ghost" size="sm" className="size-7 shrink-0 p-0 text-muted-foreground hover:bg-white/[0.07] hover:text-primary" aria-label={`${t("renameProject")}: ${project.name}`} title={t("renameProject")} onClick={() => {
+          setName(project.name);
+          setError(null);
+          setIsEditing(true);
+        }}>
+          <Pencil className="size-3.5" aria-hidden="true" />
         </Button>
-      )}
-      content={(
-        <form className="space-y-4" onSubmit={(event) => void handleSubmit(event)}>
-          <div>
-            <p className="text-sm font-semibold text-foreground">{t("renameProject")}</p>
-            <p className="mt-1 text-sm leading-5 text-muted-foreground">{t("projectNameHelp")}</p>
-          </div>
-          <label className="block space-y-2 text-sm font-medium" htmlFor={`rename-project-${project._id}`}>
-            {t("projectName")}
-            <Input id={`rename-project-${project._id}`} value={name} onChange={(event) => setName(event.target.value)} maxLength={80} autoFocus disabled={isSaving} />
-          </label>
-          {error !== null ? <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">{error}</p> : null}
-          <div className="flex justify-end gap-2 border-t border-white/[0.08] pt-4">
-            <Button type="button" size="sm" variant="ghost" className="bg-white/[0.06] hover:bg-white/[0.11]" onClick={() => handleOpenChange(false)} disabled={isSaving}>{t("cancel")}</Button>
-            <Button type="submit" size="sm" className="workspace-primary-action" disabled={isSaving}>{isSaving ? t("saving") : t("confirm")}</Button>
-          </div>
-        </form>
-      )}
-    />
+      </div>
+    );
+  }
+
+  return (
+    <form className="min-w-0 flex flex-1 flex-wrap items-center gap-1.5" onSubmit={(event) => void handleSubmit(event)}>
+      <Input
+        id={`rename-project-${project._id}`}
+        className="h-8 min-w-32 flex-1"
+        value={name}
+        maxLength={80}
+        autoFocus
+        disabled={isSaving}
+        aria-label={t("projectName")}
+        onChange={(event) => setName(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            cancelEditing();
+          }
+        }}
+      />
+      <Button type="submit" size="sm" className="h-8 px-2 workspace-primary-action" disabled={isSaving}>
+        <Check className="size-3.5" aria-hidden="true" />
+        {isSaving ? t("saving") : t("save")}
+      </Button>
+      <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-muted-foreground hover:bg-white/[0.07] hover:text-foreground" onClick={cancelEditing} disabled={isSaving}>
+        <X className="size-3.5" aria-hidden="true" />
+        {t("cancel")}
+      </Button>
+      {error !== null ? <p className="w-full text-xs text-destructive" role="alert">{error}</p> : null}
+    </form>
   );
 }
 
@@ -366,17 +489,173 @@ function NewProjectCard({ onClick }: { onClick: () => void }) {
   );
 }
 
+type ProjectUploadDialogProps = {
+  discardPendingSignal: number;
+  isProjectSelectionFixed: boolean;
+  isProjectSelectionLocked: boolean;
+  onClose: () => void;
+  onProjectChange: (projectId: Project["_id"]) => void;
+  onTaskPresenceChange: (hasTasks: boolean) => void;
+  onUploadCompleted: () => void;
+  onUploadingChange: (isUploading: boolean) => void;
+  open: boolean;
+  projects: ProjectWithAssetCount[] | undefined;
+  selectedProjectId: Project["_id"] | null;
+};
+
+type ProjectTargetSelectProps = {
+  disabled: boolean;
+  onProjectChange: (projectId: Project["_id"]) => void;
+  projects: ProjectWithAssetCount[];
+  selectedProjectId: Project["_id"] | null;
+};
+
+function ProjectTargetSelect({ disabled, onProjectChange, projects, selectedProjectId }: ProjectTargetSelectProps) {
+  const { t } = useLanguage();
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const selectedProject = projects.find((project) => project._id === selectedProjectId);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const closeOnOutsidePress = (event: MouseEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) setIsOpen(false);
+    };
+
+    document.addEventListener("mousedown", closeOnOutsidePress);
+    return () => document.removeEventListener("mousedown", closeOnOutsidePress);
+  }, [isOpen]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        id="project-upload-target"
+        type="button"
+        className="flex h-11 w-full items-center justify-between rounded-lg border border-white/[0.14] bg-[#0a1627] px-4 text-left text-base text-slate-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] transition-colors hover:border-primary/45 hover:bg-[#0d1c30] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+        aria-controls="project-upload-target-options"
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
+        disabled={disabled}
+        onClick={() => setIsOpen((current) => !current)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") setIsOpen(false);
+        }}
+      >
+        <span className="truncate">{selectedProject?.name ?? t("selectProject")}</span>
+        {isOpen ? <ChevronDown className="size-4 shrink-0 text-primary" aria-hidden="true" /> : <ChevronUp className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
+      </button>
+      {isOpen ? (
+        <div id="project-upload-target-options" role="listbox" aria-label={t("selectProject")} className="absolute z-20 mt-2 max-h-56 w-full overflow-y-auto rounded-lg border border-white/[0.14] bg-[#0d1b2e] p-1.5 shadow-[0_20px_42px_rgba(0,0,0,0.38)]">
+          {projects.map((project) => {
+            const isSelected = project._id === selectedProjectId;
+            return (
+              <button
+                key={project._id}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                className={`flex w-full items-center rounded-md px-3.5 py-3 text-left text-base transition-colors ${isSelected ? "bg-[#224b82] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-100 hover:bg-[#173553] hover:text-white"}`}
+                onClick={() => {
+                  onProjectChange(project._id);
+                  setIsOpen(false);
+                }}
+              >
+                <span className="truncate">{project.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ProjectUploadDialog({ discardPendingSignal, isProjectSelectionFixed, isProjectSelectionLocked, onClose, onProjectChange, onTaskPresenceChange, onUploadCompleted, onUploadingChange, open, projects, selectedProjectId }: ProjectUploadDialogProps) {
+  const { t } = useLanguage();
+  const selectedProject = (projects ?? []).find((project) => project._id === selectedProjectId);
+
+  return (
+    <Modal open={open} onClose={onClose} ariaLabel={t("uploadAssets")} closeLabel={t("close")} contentClassName="max-w-2xl" keepMounted>
+      <Card className="w-full workspace-glass-surface border-white/[0.14] bg-[#0c1625]">
+        <CardHeader className="pb-4 pr-14">
+          <CardTitle className="text-xl">{t("uploadAssets")}</CardTitle>
+          <CardDescription className="text-sm leading-6">{t("uploadTargetHint")}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6 pb-7">
+          {isProjectSelectionFixed ? (
+            <div className="flex items-center gap-3 rounded-xl border border-violet-400/25 bg-violet-500/[0.08] px-4 py-4">
+              <FolderOpen className="size-5 shrink-0 text-violet-200" aria-hidden="true" />
+              <span className="shrink-0 text-base font-semibold text-violet-100">{t("uploadToProject")}</span>
+              <span className="h-5 w-px shrink-0 bg-violet-300/30" aria-hidden="true" />
+              <span className="min-w-0 truncate text-lg font-semibold leading-6 text-white">{selectedProject?.name ?? t("selectProject")}</span>
+            </div>
+          ) : (
+            <label className="block space-y-2.5 text-sm font-medium">
+              {t("selectProject")}
+              <ProjectTargetSelect
+                disabled={projects === undefined || projects.length === 0 || isProjectSelectionLocked}
+                projects={projects ?? []}
+                selectedProjectId={selectedProjectId}
+                onProjectChange={onProjectChange}
+              />
+            </label>
+          )}
+          {selectedProjectId !== null ? (
+            <AssetUploader
+              key={selectedProjectId}
+              discardPendingSignal={discardPendingSignal}
+              projectId={selectedProjectId}
+              onUploadCompleted={onUploadCompleted}
+              onUploadingChange={onUploadingChange}
+              onTaskPresenceChange={onTaskPresenceChange}
+            />
+          ) : (
+            <div className="rounded-xl border border-dashed border-white/[0.12] bg-white/[0.018] px-5 py-10 text-center text-sm text-muted-foreground">
+              {t("uploadRequiresProject")}
+            </div>
+          )}
+          <p className="text-[13px] leading-5 text-muted-foreground">{t("uploadBackgroundNotice")}</p>
+        </CardContent>
+      </Card>
+    </Modal>
+  );
+}
+
 function ProjectSkeleton() {
-  return <div className="workspace-glass-surface h-48 animate-pulse rounded-xl border" aria-hidden="true" />;
+  return (
+    <div className="workspace-glass-surface min-h-[13.875rem] animate-pulse rounded-xl border p-5" aria-hidden="true">
+      <div className="flex items-start justify-between gap-4">
+        <div className="h-5 w-28 rounded bg-white/[0.1]" />
+        <div className="h-6 w-20 rounded-md bg-primary/[0.12]" />
+      </div>
+      <div className="mt-4 h-4 w-2/3 rounded bg-white/[0.06]" />
+      <div className="mt-5 h-28 rounded-xl border border-white/[0.06] bg-white/[0.025]" />
+      <div className="mt-4 flex items-center justify-between border-t border-white/[0.06] pt-3">
+        <div className="h-3 w-20 rounded bg-white/[0.06]" />
+        <div className="h-7 w-36 rounded-md bg-white/[0.06]" />
+      </div>
+    </div>
+  );
 }
 
 export function ProjectsDashboard({ initialCreateOpen = false }: { initialCreateOpen?: boolean }) {
   const { language, t } = useLanguage();
   const projects = useQuery(api.projects.list);
   const reorderProjects = useMutation(api.projects.reorder);
+  const removeUploadTask = useMutation(api.uploadTasks.remove);
+  const recoverInterruptedUploads = useMutation(api.uploadTasks.recoverInterrupted);
   const [isCreateOpen, setIsCreateOpen] = useState(initialCreateOpen);
+  const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [selectedUploadProjectId, setSelectedUploadProjectId] = useState<Project["_id"] | null>(null);
+  const [uploadEntrySource, setUploadEntrySource] = useState<UploadEntrySource>("page");
+  const [discardPendingSignal, setDiscardPendingSignal] = useState(0);
+  const [isUploadInProgress, setIsUploadInProgress] = useState(false);
+  const [hasUploadTasks, setHasUploadTasks] = useState(false);
+  const [completedUploads, setCompletedUploads] = useState<Record<string, CompletedUploadNotice>>({});
   const [draggingProjectId, setDraggingProjectId] = useState<Project["_id"] | null>(null);
   const [dropTargetProjectId, setDropTargetProjectId] = useState<Project["_id"] | null>(null);
+  const completionTimersRef = useRef<Map<string, { dismiss: number; remove: number }>>(new Map());
   const router = useRouter();
 
   useEffect(() => {
@@ -384,6 +663,104 @@ export function ProjectsDashboard({ initialCreateOpen = false }: { initialCreate
 
     router.replace("/dashboard/projects", { scroll: false });
   }, [initialCreateOpen, router]);
+
+  useEffect(() => {
+    if (!isUploadInProgress) return;
+
+    const warnBeforeLeave = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", warnBeforeLeave);
+    return () => window.removeEventListener("beforeunload", warnBeforeLeave);
+  }, [isUploadInProgress]);
+
+  useEffect(() => {
+    if (projects === undefined) return;
+
+    const recoverStaleTasks = () => {
+      for (const project of projects) {
+        void recoverInterruptedUploads({ projectId: project._id });
+      }
+    };
+
+    recoverStaleTasks();
+    const timer = window.setTimeout(recoverStaleTasks, 13_000);
+    return () => window.clearTimeout(timer);
+  }, [projects, recoverInterruptedUploads]);
+
+  useEffect(() => () => {
+    for (const timers of completionTimersRef.current.values()) {
+      window.clearTimeout(timers.dismiss);
+      window.clearTimeout(timers.remove);
+    }
+  }, []);
+
+  function openUpload(projectId?: Project["_id"]) {
+    if (projects === undefined || projects.length === 0) {
+      toast.add({ type: "info", title: t("uploadRequiresProject") });
+      return;
+    }
+
+    const nextProjectId = projectId ?? selectedUploadProjectId ?? projects[0]._id;
+    if (hasUploadTasks && selectedUploadProjectId !== null && nextProjectId !== selectedUploadProjectId) {
+      toast.add({ type: "info", title: t("uploadsInProgress") });
+      setIsUploadOpen(true);
+      return;
+    }
+
+    setUploadEntrySource(projectId === undefined ? "page" : "project-card");
+    setSelectedUploadProjectId(nextProjectId);
+    setIsUploadOpen(true);
+  }
+
+  function closeUpload() {
+    setIsUploadOpen(false);
+    setDiscardPendingSignal((current) => current + 1);
+  }
+
+  function handleUploadCompleted() {
+    if (selectedUploadProjectId === null) return;
+
+    const projectId = selectedUploadProjectId;
+    const existingTimers = completionTimersRef.current.get(projectId);
+    if (existingTimers !== undefined) {
+      window.clearTimeout(existingTimers.dismiss);
+      window.clearTimeout(existingTimers.remove);
+    }
+
+    setCompletedUploads((current) => ({
+      ...current,
+      [projectId]: {
+        count: (current[projectId]?.count ?? 0) + 1,
+        isDismissing: false,
+      },
+    }));
+
+    const dismiss = window.setTimeout(() => {
+      setCompletedUploads((current) => current[projectId] === undefined ? current : {
+        ...current,
+        [projectId]: { ...current[projectId], isDismissing: true },
+      });
+    }, 3_700);
+    const remove = window.setTimeout(() => {
+      setCompletedUploads((current) => {
+        const remaining = { ...current };
+        delete remaining[projectId];
+        return remaining;
+      });
+      completionTimersRef.current.delete(projectId);
+    }, 4_100);
+
+    completionTimersRef.current.set(projectId, { dismiss, remove });
+  }
+
+  function handleRemoveUploadTask(taskId: Id<"uploadTasks">) {
+    void removeUploadTask({ id: taskId }).catch(() => {
+      toast.add({ type: "error", title: t("couldNotRemoveUpload") });
+    });
+  }
 
   function handleDragStart(projectId: Project["_id"]) {
     setDraggingProjectId(projectId);
@@ -425,18 +802,31 @@ export function ProjectsDashboard({ initialCreateOpen = false }: { initialCreate
           <h1 id="projects-page-title" className="text-3xl font-semibold tracking-tight">{t("projectManagement")}</h1>
           <p className="mt-2 max-w-2xl text-muted-foreground">{t("projectsDescription")}</p>
         </div>
-        <Button type="button" className="workspace-primary-action transition-all" onClick={() => setIsCreateOpen(true)}>
-          <span aria-hidden="true" className="text-base leading-none">+</span>
-          {t("createProject")}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" className="border border-blue-500/80 bg-blue-700 text-white shadow-[0_6px_18px_rgba(37,99,235,0.25)] hover:bg-blue-800 hover:text-white" onClick={() => setIsCreateOpen(true)}>
+            <span aria-hidden="true" className="text-base leading-none">+</span>
+            {t("newProject")}
+          </Button>
+          <Button type="button" className="bg-green-700 text-white shadow-[0_6px_18px_rgba(21,128,61,0.22)] hover:bg-green-800 hover:text-white" onClick={() => openUpload()} disabled={projects === undefined || projects.length === 0}>
+            <Upload className="size-4" aria-hidden="true" />
+            {t("uploadAssets")}
+          </Button>
+        </div>
       </div>
 
       <div className="mt-8 min-h-0 flex-1">
       {projects === undefined ? (
-        <div className="grid h-full gap-5 md:grid-cols-2">
-          <ProjectSkeleton />
-          <ProjectSkeleton />
-          <ProjectSkeleton />
+        <div className="flex h-full min-h-0 flex-col" aria-busy="true">
+          <p className="sr-only" role="status">{t("loadingWorkspace")}</p>
+          <div className="h-4 w-16 animate-pulse rounded bg-white/[0.07]" aria-hidden="true" />
+          <div className="workspace-scrollbar mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-2 [scrollbar-gutter:stable]">
+            <div className="grid gap-5 py-4 md:grid-cols-2">
+              <ProjectSkeleton />
+              <ProjectSkeleton />
+              <ProjectSkeleton />
+              <ProjectSkeleton />
+            </div>
+          </div>
         </div>
       ) : projects.length === 0 ? (
         <div className="grid gap-5 md:grid-cols-2">
@@ -445,7 +835,7 @@ export function ProjectsDashboard({ initialCreateOpen = false }: { initialCreate
       ) : (
         <div className="flex h-full min-h-0 flex-col">
           <p className="shrink-0 text-sm text-muted-foreground" aria-live="polite">{projects.length} {projects.length === 1 ? t("project") : t("projectsPlural")}</p>
-          <div className="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-2 [scrollbar-gutter:stable]">
+          <div className="workspace-scrollbar mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-2 [scrollbar-gutter:stable]">
           <div className="grid gap-5 py-4 md:grid-cols-2">
             <NewProjectCard onClick={() => setIsCreateOpen(true)} />
             {projects.map((project) => (
@@ -459,6 +849,9 @@ export function ProjectsDashboard({ initialCreateOpen = false }: { initialCreate
                 onDragEnd={handleDragEnd}
                 onDragTargetChange={handleDragTargetChange}
                 onDrop={handleDrop}
+                onOpenUpload={openUpload}
+                onRemoveUploadTask={handleRemoveUploadTask}
+                completedUploadNotice={completedUploads[project._id]}
               />
             ))}
           </div>
@@ -470,6 +863,19 @@ export function ProjectsDashboard({ initialCreateOpen = false }: { initialCreate
       <Modal open={isCreateOpen} onClose={() => setIsCreateOpen(false)} ariaLabel={t("newProject")} closeLabel={t("close")}>
         <ProjectForm onCreated={() => setIsCreateOpen(false)} />
       </Modal>
+      <ProjectUploadDialog
+        open={isUploadOpen}
+        onClose={closeUpload}
+        projects={projects}
+        selectedProjectId={selectedUploadProjectId}
+        onProjectChange={(projectId) => setSelectedUploadProjectId(projectId)}
+        discardPendingSignal={discardPendingSignal}
+        isProjectSelectionFixed={uploadEntrySource === "project-card"}
+        isProjectSelectionLocked={hasUploadTasks}
+        onUploadingChange={setIsUploadInProgress}
+        onTaskPresenceChange={setHasUploadTasks}
+        onUploadCompleted={handleUploadCompleted}
+      />
     </section>
   );
 }

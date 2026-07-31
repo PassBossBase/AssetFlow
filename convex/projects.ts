@@ -1,4 +1,5 @@
 import { mutation, query } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import type { Auth } from "convex/server";
@@ -25,26 +26,45 @@ export const list = query({
     const projectsWithAssetCount = await Promise.all(projects.map(async (project) => {
       const assets = await ctx.db
         .query("assets")
-        .withIndex("by_project", (query) => query.eq("projectId", project._id))
+        .withIndex("by_project_createdAt", (query) => query.eq("projectId", project._id))
+        .order("desc")
         .collect();
 
-      return { ...project, assetCount: assets.length };
+      const recentAssets = await Promise.all(assets.slice(0, 4).map(async (asset) => ({
+        _id: asset._id,
+        extension: asset.extension,
+        name: asset.name,
+        previewUrl: ["png", "jpg", "jpeg", "webp", "svg", "gif"].includes(asset.extension)
+          ? await ctx.storage.getUrl(asset.storageId)
+          : null,
+      })));
+
+      return { ...project, assetCount: assets.length, recentAssets };
     }));
 
     const uploadTasks = await ctx.db
       .query("uploadTasks")
       .withIndex("by_user", (query) => query.eq("userId", userId))
       .collect();
-    const uploadSummaryByProject = new Map<string, { failedCount: number; progressBytes: number; totalBytes: number; uploadingCount: number }>();
+    const uploadSummaryByProject = new Map<string, {
+      failedCount: number;
+      failedTasks: Array<{ _id: Id<"uploadTasks">; fileName: string; size: number; status: "failed" | "interrupted" }>;
+      progressBytes: number;
+      totalBytes: number;
+      uploadingCount: number;
+    }>();
 
     for (const task of uploadTasks) {
-      const summary = uploadSummaryByProject.get(task.projectId) ?? { failedCount: 0, progressBytes: 0, totalBytes: 0, uploadingCount: 0 };
+      const summary = uploadSummaryByProject.get(task.projectId) ?? { failedCount: 0, failedTasks: [], progressBytes: 0, totalBytes: 0, uploadingCount: 0 };
       if (task.status === "uploading") {
         summary.uploadingCount += 1;
         summary.progressBytes += task.size * (task.progress / 100);
         summary.totalBytes += task.size;
       } else {
         summary.failedCount += 1;
+        if (summary.failedTasks.length < 2) {
+          summary.failedTasks.push({ _id: task._id, fileName: task.fileName, size: task.size, status: task.status });
+        }
       }
       uploadSummaryByProject.set(task.projectId, summary);
     }
@@ -55,6 +75,7 @@ export const list = query({
         ...project,
         uploadSummary: {
           failedCount: summary?.failedCount ?? 0,
+          failedTasks: summary?.failedTasks ?? [],
           progress: summary === undefined || summary.totalBytes === 0 ? 0 : Math.round((summary.progressBytes / summary.totalBytes) * 100),
           uploadingCount: summary?.uploadingCount ?? 0,
         },
