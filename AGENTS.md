@@ -1,4 +1,4 @@
-# AssetFlow AI - AGENTS.md
+# AssetFlow - AGENTS.md
 
 ## 项目角色
 
