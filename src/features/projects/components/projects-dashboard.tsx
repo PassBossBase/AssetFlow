@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
-import { AlertCircle, Check, ChevronDown, ChevronUp, File, FolderOpen, GripVertical, Images, Pencil, RotateCcw, Trash2, Upload, X } from "lucide-react";
+import { AlertCircle, Check, ChevronDown, ChevronUp, File, FolderOpen, GripVertical, Images, RotateCcw, Trash2, Upload } from "lucide-react";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -11,9 +11,9 @@ import { useLanguage } from "@/components/language-provider";
 import { toast } from "@/components/ui/toast";
 import { Modal } from "@/components/ui/modal";
 import { PopConfirm } from "@/components/ui/popconfirm";
-import { Input } from "@/components/ui/input";
 import { AssetUploader } from "@/features/assets/components/asset-uploader";
 import { ProjectForm } from "@/features/projects/components/project-form";
+import { ProjectMetadataEditor } from "@/features/projects/components/project-metadata-editor";
 import { api, type Id, type Project } from "@/lib/convex";
 
 type RecentProjectAsset = {
@@ -258,7 +258,10 @@ function ProjectCard({ completedUploadNotice, draggingProjectId, dropTargetProje
     >
       <CardHeader className="p-5 pb-4">
         <div className="flex items-start justify-between gap-3">
-          <InlineProjectNameEditor project={project} />
+          <div className="flex min-w-0 flex-1 items-center gap-1">
+            <CardTitle className="min-w-0 flex-1 truncate">{project.name}</CardTitle>
+            <ProjectMetadataEditor project={project} />
+          </div>
           <div className="flex shrink-0 items-center gap-1.5">
             <span className="inline-flex items-center gap-1 rounded-md border border-primary/20 bg-primary/[0.07] px-2 py-1 text-xs font-medium text-primary" title={`${project.assetCount} ${t("assetCount")}`}>
               <Images className="size-3.5" aria-hidden="true" />
@@ -349,99 +352,6 @@ function ProjectCard({ completedUploadNotice, draggingProjectId, dropTargetProje
       </CardContent>
     </Card>
     </div>
-  );
-}
-
-function InlineProjectNameEditor({ project }: { project: Project }) {
-  const { t } = useLanguage();
-  const updateProject = useMutation(api.projects.update);
-  const [isEditing, setIsEditing] = useState(false);
-  const [name, setName] = useState(project.name);
-  const [error, setError] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-
-  function cancelEditing() {
-    if (isSaving) return;
-    setName(project.name);
-    setError(null);
-    setIsEditing(false);
-  }
-
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const nextName = name.trim();
-
-    if (nextName.length < 2) {
-      setError(t("projectNameMin"));
-      return;
-    }
-
-    if (nextName.length > 80) {
-      setError(t("projectNameMax"));
-      return;
-    }
-
-    if (nextName === project.name) {
-      cancelEditing();
-      return;
-    }
-
-    setError(null);
-    setIsSaving(true);
-    try {
-      await updateProject({ id: project._id, name: nextName, description: project.description });
-      toast.add({ type: "success", title: t("projectRenamed") });
-      setIsEditing(false);
-    } catch (renameError) {
-      setError(renameError instanceof Error ? renameError.message : t("couldNotSaveProject"));
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  if (!isEditing) {
-    return (
-      <div className="flex min-w-0 flex-1 items-center gap-1">
-        <CardTitle className="min-w-0 flex-1 truncate">{project.name}</CardTitle>
-        <Button type="button" variant="ghost" size="sm" className="size-7 shrink-0 p-0 text-muted-foreground hover:bg-white/[0.07] hover:text-primary" aria-label={`${t("renameProject")}: ${project.name}`} title={t("renameProject")} onClick={() => {
-          setName(project.name);
-          setError(null);
-          setIsEditing(true);
-        }}>
-          <Pencil className="size-3.5" aria-hidden="true" />
-        </Button>
-      </div>
-    );
-  }
-
-  return (
-    <form className="min-w-0 flex flex-1 flex-wrap items-center gap-1.5" onSubmit={(event) => void handleSubmit(event)}>
-      <Input
-        id={`rename-project-${project._id}`}
-        className="h-8 min-w-32 flex-1"
-        value={name}
-        maxLength={80}
-        autoFocus
-        disabled={isSaving}
-        aria-label={t("projectName")}
-        onChange={(event) => setName(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            event.preventDefault();
-            cancelEditing();
-          }
-        }}
-      />
-      <Button type="submit" size="sm" className="h-8 px-2 workspace-primary-action" disabled={isSaving}>
-        <Check className="size-3.5" aria-hidden="true" />
-        {isSaving ? t("saving") : t("save")}
-      </Button>
-      <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-muted-foreground hover:bg-white/[0.07] hover:text-foreground" onClick={cancelEditing} disabled={isSaving}>
-        <X className="size-3.5" aria-hidden="true" />
-        {t("cancel")}
-      </Button>
-      {error !== null ? <p className="w-full text-xs text-destructive" role="alert">{error}</p> : null}
-    </form>
   );
 }
 
@@ -574,38 +484,38 @@ function ProjectTargetSelect({ disabled, onProjectChange, projects, selectedProj
 function ProjectUploadDialog({ discardPendingSignal, isProjectSelectionFixed, isProjectSelectionLocked, onClose, onProjectChange, onTaskPresenceChange, onUploadCompleted, onUploadingChange, open, projects, selectedProjectId }: ProjectUploadDialogProps) {
   const { t } = useLanguage();
   const selectedProject = (projects ?? []).find((project) => project._id === selectedProjectId);
+  const projectTargetControl = isProjectSelectionFixed ? (
+    <div className="flex min-w-0 items-center gap-3 rounded-lg border border-violet-400/25 bg-violet-500/[0.08] px-3.5 py-3 text-sm sm:max-w-md">
+      <FolderOpen className="size-4 shrink-0 text-violet-200" aria-hidden="true" />
+      <span className="shrink-0 font-semibold text-violet-100">{t("uploadToProject")}</span>
+      <span className="h-4 w-px shrink-0 bg-violet-300/30" aria-hidden="true" />
+      <span className="min-w-0 truncate font-semibold text-white">{selectedProject?.name ?? t("selectProject")}</span>
+    </div>
+  ) : (
+    <label className="block w-full min-w-0 space-y-1.5 text-sm font-medium sm:max-w-md">
+      <span>{t("selectProject")}</span>
+      <ProjectTargetSelect
+        disabled={projects === undefined || projects.length === 0 || isProjectSelectionLocked}
+        projects={projects ?? []}
+        selectedProjectId={selectedProjectId}
+        onProjectChange={onProjectChange}
+      />
+    </label>
+  );
 
   return (
-    <Modal open={open} onClose={onClose} ariaLabel={t("uploadAssets")} closeLabel={t("close")} contentClassName="max-w-2xl" keepMounted>
+    <Modal open={open} onClose={onClose} ariaLabel={t("uploadAssets")} closeLabel={t("close")} contentClassName="max-w-[46rem] sm:overflow-hidden" keepMounted>
       <Card className="w-full workspace-glass-surface border-white/[0.14] bg-[#0c1625]">
-        <CardHeader className="pb-4 pr-14">
+        <CardHeader className="pb-3 pr-14">
           <CardTitle className="text-xl">{t("uploadAssets")}</CardTitle>
-          <CardDescription className="text-sm leading-6">{t("uploadTargetHint")}</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6 pb-7">
-          {isProjectSelectionFixed ? (
-            <div className="flex items-center gap-3 rounded-xl border border-violet-400/25 bg-violet-500/[0.08] px-4 py-4">
-              <FolderOpen className="size-5 shrink-0 text-violet-200" aria-hidden="true" />
-              <span className="shrink-0 text-base font-semibold text-violet-100">{t("uploadToProject")}</span>
-              <span className="h-5 w-px shrink-0 bg-violet-300/30" aria-hidden="true" />
-              <span className="min-w-0 truncate text-lg font-semibold leading-6 text-white">{selectedProject?.name ?? t("selectProject")}</span>
-            </div>
-          ) : (
-            <label className="block space-y-2.5 text-sm font-medium">
-              {t("selectProject")}
-              <ProjectTargetSelect
-                disabled={projects === undefined || projects.length === 0 || isProjectSelectionLocked}
-                projects={projects ?? []}
-                selectedProjectId={selectedProjectId}
-                onProjectChange={onProjectChange}
-              />
-            </label>
-          )}
+        <CardContent className="pb-5">
           {selectedProjectId !== null ? (
             <AssetUploader
-              key={selectedProjectId}
+              compact
               discardPendingSignal={discardPendingSignal}
               projectId={selectedProjectId}
+              toolbarLeading={projectTargetControl}
               onUploadCompleted={onUploadCompleted}
               onUploadingChange={onUploadingChange}
               onTaskPresenceChange={onTaskPresenceChange}
@@ -615,7 +525,6 @@ function ProjectUploadDialog({ discardPendingSignal, isProjectSelectionFixed, is
               {t("uploadRequiresProject")}
             </div>
           )}
-          <p className="text-[13px] leading-5 text-muted-foreground">{t("uploadBackgroundNotice")}</p>
         </CardContent>
       </Card>
     </Modal>

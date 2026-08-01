@@ -39,6 +39,50 @@ function validateFileMetadata(extension: string, name: string, size: number) {
   }
 }
 
+function validateBatchAssetIds(ids: Id<"assets">[]) {
+  if (ids.length < 1 || ids.length > 100) {
+    throw new Error("Select between 1 and 100 assets");
+  }
+
+  if (new Set(ids).size !== ids.length) {
+    throw new Error("Assets must be unique");
+  }
+}
+
+async function requireOwnedProjectAssets(
+  ctx: {
+    db: {
+      get: (id: Id<"assets">) => Promise<{
+        _id: Id<"assets">;
+        projectId: Id<"projects">;
+        storageId: Id<"_storage">;
+        userId: string;
+      } | null>;
+    };
+  },
+  ids: Id<"assets">[],
+  projectId: Id<"projects">,
+  userId: string,
+) {
+  const assets = await Promise.all(ids.map((id) => ctx.db.get(id)));
+  const ownedAssets = [] as Array<{
+    _id: Id<"assets">;
+    projectId: Id<"projects">;
+    storageId: Id<"_storage">;
+    userId: string;
+  }>;
+
+  for (const asset of assets) {
+    if (asset === null || asset.userId !== userId || asset.projectId !== projectId) {
+      throw new Error("Asset not found");
+    }
+
+    ownedAssets.push(asset);
+  }
+
+  return ownedAssets;
+}
+
 export const generateUploadUrl = mutation({
   args: { projectId: v.id("projects") },
   handler: async (ctx, args) => {
@@ -166,5 +210,47 @@ export const remove = mutation({
 
     await ctx.storage.delete(asset.storageId);
     await ctx.db.delete(args.id);
+  },
+});
+
+export const batchMove = mutation({
+  args: {
+    ids: v.array(v.id("assets")),
+    projectId: v.id("projects"),
+    targetProjectId: v.id("projects"),
+  },
+  handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx);
+    validateBatchAssetIds(args.ids);
+    await requireProject(ctx, args.projectId, userId);
+    await requireProject(ctx, args.targetProjectId, userId);
+    if (args.projectId === args.targetProjectId) {
+      throw new Error("Choose a different destination project");
+    }
+
+    const assets = await requireOwnedProjectAssets(ctx, args.ids, args.projectId, userId);
+    const now = Date.now();
+    await Promise.all(assets.map((asset) => ctx.db.patch(asset._id, {
+      projectId: args.targetProjectId,
+      updatedAt: now,
+    })));
+    return assets.length;
+  },
+});
+
+export const batchRemove = mutation({
+  args: {
+    ids: v.array(v.id("assets")),
+    projectId: v.id("projects"),
+  },
+  handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx);
+    validateBatchAssetIds(args.ids);
+    await requireProject(ctx, args.projectId, userId);
+    const assets = await requireOwnedProjectAssets(ctx, args.ids, args.projectId, userId);
+
+    await Promise.all(assets.map((asset) => ctx.storage.delete(asset.storageId)));
+    await Promise.all(assets.map((asset) => ctx.db.delete(asset._id)));
+    return assets.length;
   },
 });

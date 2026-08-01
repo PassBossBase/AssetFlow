@@ -8,53 +8,21 @@ import { ArrowLeft, FolderOpen, Settings2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { useLanguage } from "@/components/language-provider";
 import { toast } from "@/components/ui/toast";
 import { PopConfirm } from "@/components/ui/popconfirm";
 import { api, type Id, type Project } from "@/lib/convex";
-import { projectSchema } from "@/features/projects/lib/validation";
 import { ProjectAssetsPanel } from "@/features/assets/components/project-assets-panel";
+import { ProjectMetadataEditor } from "@/features/projects/components/project-metadata-editor";
 
 const backToProjectsButtonClassName = "border border-violet-500/80 bg-violet-700 text-white hover:bg-violet-800 hover:text-white";
 
-function ProjectEditor({ id, project }: { id: Id<"projects">; project: Project }) {
+function ProjectSettings({ id, project }: { id: Id<"projects">; project: Project }) {
   const { t } = useLanguage();
   const router = useRouter();
-  const updateProject = useMutation(api.projects.update);
   const removeProject = useMutation(api.projects.remove);
-  const [name, setName] = useState(project.name);
-  const [description, setDescription] = useState(project.description);
   const [error, setError] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-
-  const hasChanges = name !== project.name || description !== project.description;
-
-  async function handleSave(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError(null);
-
-    const validation = projectSchema.safeParse({ name, description });
-    if (!validation.success) {
-      const field = validation.error.issues[0]?.path[0];
-      setError(field === "name" ? (name.trim().length < 2 ? t("projectNameMin") : t("projectNameMax")) : t("projectDescriptionMax"));
-      return;
-    }
-
-    setIsSaving(true);
-
-    try {
-      await updateProject({ id, ...validation.data });
-      setName(validation.data.name);
-      setDescription(validation.data.description);
-      toast.add({ type: "success", title: t("changesSaved") });
-    } catch (projectError) {
-      setError(projectError instanceof Error ? projectError.message : t("couldNotSaveProject"));
-    } finally {
-      setIsSaving(false);
-    }
-  }
 
   async function handleDelete() {
     setError(null);
@@ -77,42 +45,27 @@ function ProjectEditor({ id, project }: { id: Id<"projects">; project: Project }
         <CardDescription>{t("projectDetailsDescription")}</CardDescription>
       </CardHeader>
       <CardContent className="pt-6">
-        <form className="space-y-6" onSubmit={handleSave}>
-          <div className="grid gap-6">
-            <label className="block space-y-2.5 text-sm font-medium" htmlFor="project-detail-name">
-              <span className="flex items-center justify-between gap-3"><span>{t("projectName")}</span><span id="project-detail-name-help" className="text-xs font-normal text-muted-foreground">{t("projectNameHelp")}</span></span>
-              <Input id="project-detail-name" className="h-11 border-white/[0.12] bg-[#08131f]/75 px-3.5 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.025)] focus-visible:border-primary/65" value={name} onChange={(event) => setName(event.target.value)} maxLength={80} required aria-describedby="project-detail-name-help" />
-            </label>
-            <label className="block space-y-2.5 text-sm font-medium" htmlFor="project-detail-description">
-              <span className="flex items-center justify-between gap-3"><span>{t("projectDescription")}</span><span id="project-detail-description-help" className="text-xs font-normal text-muted-foreground">{description.length}/500</span></span>
-              <textarea
-                id="project-detail-description"
-                className="form-control flex min-h-28 w-full resize-y rounded-md border border-white/[0.12] bg-[#08131f]/75 px-3.5 py-3 text-sm leading-6 outline-none placeholder:text-muted-foreground shadow-[inset_0_1px_0_rgb(255_255_255_/_0.025)] focus-visible:border-primary/65 focus-visible:ring-2 focus-visible:ring-ring"
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                maxLength={500}
-                aria-describedby="project-detail-description-help"
-              />
-              <span className="block text-xs font-normal text-muted-foreground">{t("projectDescriptionHelp")}</span>
-            </label>
+        <div className="space-y-6">
+          <div className="flex items-start justify-between gap-4 rounded-xl border border-white/[0.1] bg-white/[0.025] p-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground">{project.name}</p>
+              <p className="mt-1 line-clamp-2 text-sm leading-6 text-muted-foreground">{project.description || t("noDescription")}</p>
+            </div>
+            <ProjectMetadataEditor project={project} />
           </div>
           {error !== null ? <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">{error}</p> : null}
-          <div className="flex flex-col-reverse gap-3 border-t border-white/[0.08] pt-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex border-t border-white/[0.08] pt-5">
             <PopConfirm
               title={t("deleteProject")}
               description={t("deleteProjectConfirm")}
               confirmLabel={isDeleting ? t("deleting") : t("confirm")}
               cancelLabel={t("cancel")}
-              disabled={isSaving || isDeleting}
+              disabled={isDeleting}
               onConfirm={handleDelete}
-              trigger={<Button type="button" variant="destructive" disabled={isSaving || isDeleting} aria-busy={isDeleting}>{isDeleting ? t("deleting") : t("deleteProject")}</Button>}
+              trigger={<Button type="button" variant="destructive" disabled={isDeleting} aria-busy={isDeleting}>{isDeleting ? t("deleting") : t("deleteProject")}</Button>}
             />
-            <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
-              <Button type="button" variant="outline" disabled={isSaving || isDeleting} onClick={() => { setName(project.name); setDescription(project.description); setError(null); }}>{t("discardChanges")}</Button>
-              <Button type="submit" disabled={isSaving || isDeleting || !hasChanges} aria-busy={isSaving}>{isSaving ? t("saving") : t("saveChanges")}</Button>
-            </div>
           </div>
-        </form>
+        </div>
       </CardContent>
     </Card>
   );
@@ -173,7 +126,10 @@ export function ProjectDetail({ id }: { id: string }) {
             <Link href="/dashboard/projects"><ArrowLeft className="size-4" aria-hidden="true" />{t("backToProjects")}</Link>
           </Button>
           <div className="min-w-0 sm:border-l sm:border-white/[0.1] sm:pl-6">
-            <h1 className="truncate text-3xl font-semibold tracking-[-0.035em] text-primary sm:text-4xl">{project.name}</h1>
+            <div className="flex min-w-0 items-center gap-2">
+              <h1 className="min-w-0 truncate text-3xl font-semibold tracking-[-0.035em] text-primary sm:text-4xl">{project.name}</h1>
+              <ProjectMetadataEditor project={project} triggerClassName="size-9" />
+            </div>
             <p className="mt-2 line-clamp-1 max-w-3xl text-base leading-6 text-muted-foreground">{project.description || t("noDescription")}</p>
           </div>
         </div>
@@ -186,7 +142,7 @@ export function ProjectDetail({ id }: { id: string }) {
         <div hidden={activeTab !== "assets"}>
           <ProjectAssetsPanel projectId={projectId} />
         </div>
-        {activeTab === "settings" ? <ProjectEditor key={project._id} id={projectId} project={project} /> : null}
+        {activeTab === "settings" ? <ProjectSettings key={project._id} id={projectId} project={project} /> : null}
       </div>
     </section>
   );

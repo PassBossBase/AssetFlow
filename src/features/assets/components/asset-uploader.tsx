@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { RotateCcw, Trash2 } from "lucide-react";
 
@@ -108,14 +108,16 @@ function shouldSyncProgress(syncRecords: Map<string, { progress: number; syncedA
 }
 
 type AssetUploaderProps = {
+  compact?: boolean;
   discardPendingSignal?: number;
+  toolbarLeading?: ReactNode;
   projectId: Id<"projects">;
   onUploadCompleted?: () => void;
   onUploadingChange?: (isUploading: boolean) => void;
   onTaskPresenceChange?: (hasTasks: boolean) => void;
 };
 
-export function AssetUploader({ discardPendingSignal = 0, projectId, onUploadCompleted, onTaskPresenceChange, onUploadingChange }: AssetUploaderProps) {
+export function AssetUploader({ compact = false, discardPendingSignal = 0, projectId, onUploadCompleted, onTaskPresenceChange, onUploadingChange, toolbarLeading }: AssetUploaderProps) {
   const { language, t } = useLanguage();
   const inputRef = useRef<HTMLInputElement>(null);
   const completionTimersRef = useRef<Map<string, CompletionTimers>>(new Map());
@@ -373,25 +375,28 @@ export function AssetUploader({ discardPendingSignal = 0, projectId, onUploadCom
   const remoteTasks = (persistedTasks ?? []).filter((task) => !localTaskIds.has(task._id));
   const isUploading = uploadItems.some((item) => item.status === "uploading") || remoteTasks.some((task) => task.status === "uploading");
   const hasVisibleTasks = uploadItems.length > 0 || remoteTasks.length > 0;
+  const hasStartedUploadTasks = uploadItems.some((item) => item.taskId !== undefined) || remoteTasks.length > 0;
 
   useEffect(() => {
     onUploadingChange?.(isUploading);
   }, [isUploading, onUploadingChange]);
 
   useEffect(() => {
-    onTaskPresenceChange?.(hasVisibleTasks);
-  }, [hasVisibleTasks, onTaskPresenceChange]);
+    onTaskPresenceChange?.(hasStartedUploadTasks);
+  }, [hasStartedUploadTasks, onTaskPresenceChange]);
 
   return (
     <Card className="workspace-glass-surface overflow-hidden border-white/[0.12] bg-[#0c1625]">
-      <CardHeader className="flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
-        <div className="space-y-1.5">
-          <CardTitle className="text-lg">{t("uploadAssets")}</CardTitle>
-          <CardDescription className="text-sm leading-5">{t("supportedFormats")} · {t("maxFileSize")}</CardDescription>
-        </div>
+      <CardHeader className={`flex ${compact ? "flex-col gap-3 p-4 pb-0 sm:flex-row sm:items-end sm:justify-between" : "flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"}`}>
+        {compact ? toolbarLeading : (
+          <div className="space-y-1.5">
+            <CardTitle className="text-lg">{t("uploadAssets")}</CardTitle>
+            <CardDescription className="text-sm leading-5">{t("supportedFormats")} · {t("maxFileSize")}</CardDescription>
+          </div>
+        )}
         <Button
           type="button"
-          className="min-w-36 border border-green-500/80 bg-green-700 text-white shadow-[0_6px_18px_rgba(21,128,61,0.22)] hover:bg-green-800 hover:text-white disabled:border-[#5d956d] disabled:bg-[#4c7a5c] disabled:text-white disabled:opacity-100 disabled:shadow-none"
+          className="min-w-36 self-end border border-green-500/80 bg-green-700 text-white shadow-[0_6px_18px_rgba(21,128,61,0.22)] hover:bg-green-800 hover:text-white disabled:border-[#5d956d] disabled:bg-[#4c7a5c] disabled:text-white disabled:opacity-100 disabled:shadow-none"
           onClick={handleUpload}
           disabled={queuedCount === 0}
           aria-busy={isUploading}
@@ -399,7 +404,7 @@ export function AssetUploader({ discardPendingSignal = 0, projectId, onUploadCom
           {queuedCount > 0 ? `${t("uploadSelected")}${` (${queuedCount})`}` : isUploading ? t("uploadingFiles") : t("uploadSelected")}
         </Button>
       </CardHeader>
-      <CardContent className="space-y-5 px-5 pb-5">
+      <CardContent className={compact ? "space-y-4 px-4 pb-4 pt-4" : "space-y-5 px-5 pb-5"}>
         <div
           role="button"
           tabIndex={0}
@@ -410,10 +415,11 @@ export function AssetUploader({ discardPendingSignal = 0, projectId, onUploadCom
           onDragEnter={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          className={`flex min-h-44 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed px-4 py-8 text-center transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${isDragging ? "border-primary bg-primary/15 shadow-[0_0_0_4px_rgba(96,165,250,0.12)]" : "border-primary/40 bg-background/40 hover:border-primary hover:bg-primary/[0.08]"}`}
+          className={`flex ${compact ? "min-h-32 py-5" : "min-h-44 py-8"} cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed px-4 text-center transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${isDragging ? "border-primary bg-primary/15 shadow-[0_0_0_4px_rgba(96,165,250,0.12)]" : "border-primary/40 bg-background/40 hover:border-primary hover:bg-primary/[0.08]"}`}
         >
           <span className="text-[15px] font-medium text-foreground">{isDragging ? t("dropFilesHere") : t("dragDropFiles")}</span>
           <span className="mt-1 text-[13px] text-muted-foreground">{t("supportedFormats")}</span>
+          {compact ? <span className="mt-1 text-[13px] text-muted-foreground">{t("maxFileSize")}</span> : null}
           <span className="mt-3 rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs text-muted-foreground">{t("batchUploadHint")}</span>
           <input ref={inputRef} className="sr-only" type="file" accept={assetAccept} multiple={retryTarget === null} onChange={handleSelect} />
         </div>
@@ -424,7 +430,7 @@ export function AssetUploader({ discardPendingSignal = 0, projectId, onUploadCom
               <h3 id="upload-queue-title" className="text-sm font-semibold">{t("uploadQueue")}</h3>
               <span className="text-xs text-muted-foreground">{uploadItems.length + remoteTasks.length}</span>
             </div>
-            <ul className="workspace-scrollbar max-h-64 space-y-2 overflow-y-auto overscroll-contain p-3 pr-2 [scrollbar-gutter:stable]" aria-label={t("uploadQueue")}>
+            <ul className={`workspace-scrollbar ${compact ? "h-44" : "max-h-64"} space-y-2 overflow-y-auto overscroll-contain p-3 pr-2 [scrollbar-gutter:stable]`} aria-label={t("uploadQueue")}>
               {uploadItems.map((item) => (
               <li key={item.id} className={`overflow-hidden rounded-lg border bg-background/35 px-3 py-3 transition-[max-height,opacity,transform,margin,padding,border-color] duration-300 ease-out motion-reduce:transition-none ${item.isDismissing ? "max-h-0 -translate-y-1 border-transparent py-0 opacity-0" : "max-h-40 border-white/10"}`}>
                 <div className="flex items-start justify-between gap-3 text-sm">

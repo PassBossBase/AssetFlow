@@ -153,13 +153,13 @@ export function AssetDetail({ id }: { id: string }) {
         <div className="flex flex-wrap items-center justify-end gap-2">
           {downloadUrl ? <Button type="button" size="sm" className="h-10 border border-blue-500/80 bg-blue-700 px-5 text-white hover:bg-blue-800 hover:text-white" onClick={() => void handleDownload()} disabled={isBusy || isDownloading}><Download className="size-4" aria-hidden="true" />{isDownloading ? t("downloading") : t("download")}</Button> : null}
           <PopConfirm
-            title={t("remove")}
+            title={t("deleteAsset")}
             description={t("deleteAssetConfirm")}
             confirmLabel={t("confirm")}
             cancelLabel={t("cancel")}
             disabled={isBusy}
             onConfirm={handleRemove}
-            trigger={<Button type="button" size="sm" className="h-10 border border-red-500/80 bg-red-700 px-5 text-white hover:bg-red-800 hover:text-white" disabled={isBusy}><Trash2 className="size-4" aria-hidden="true" />{t("remove")}</Button>}
+            trigger={<Button type="button" size="sm" className="h-10 border border-red-500/80 bg-red-700 px-5 text-white hover:bg-red-800 hover:text-white" disabled={isBusy}><Trash2 className="size-4" aria-hidden="true" />{t("deleteAsset")}</Button>}
           />
         </div>
       </header>
