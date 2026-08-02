@@ -114,10 +114,10 @@ type AssetUploaderProps = {
   projectId: Id<"projects">;
   onUploadCompleted?: () => void;
   onUploadingChange?: (isUploading: boolean) => void;
-  onTaskPresenceChange?: (hasTasks: boolean) => void;
+  skipStaleRecovery?: boolean;
 };
 
-export function AssetUploader({ compact = false, discardPendingSignal = 0, projectId, onUploadCompleted, onTaskPresenceChange, onUploadingChange, toolbarLeading }: AssetUploaderProps) {
+export function AssetUploader({ compact = false, discardPendingSignal = 0, projectId, onUploadCompleted, onUploadingChange, skipStaleRecovery = false, toolbarLeading }: AssetUploaderProps) {
   const { language, t } = useLanguage();
   const inputRef = useRef<HTMLInputElement>(null);
   const completionTimersRef = useRef<Map<string, CompletionTimers>>(new Map());
@@ -188,10 +188,12 @@ export function AssetUploader({ compact = false, discardPendingSignal = 0, proje
   }, [discardPendingSignal]);
 
   useEffect(() => {
+    if (skipStaleRecovery) return;
+
     void recoverInterruptedUploads({ projectId });
     const timer = window.setTimeout(() => void recoverInterruptedUploads({ projectId }), 13_000);
     return () => window.clearTimeout(timer);
-  }, [projectId, recoverInterruptedUploads]);
+  }, [projectId, recoverInterruptedUploads, skipStaleRecovery]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -375,15 +377,10 @@ export function AssetUploader({ compact = false, discardPendingSignal = 0, proje
   const remoteTasks = (persistedTasks ?? []).filter((task) => !localTaskIds.has(task._id));
   const isUploading = uploadItems.some((item) => item.status === "uploading") || remoteTasks.some((task) => task.status === "uploading");
   const hasVisibleTasks = uploadItems.length > 0 || remoteTasks.length > 0;
-  const hasStartedUploadTasks = uploadItems.some((item) => item.taskId !== undefined) || remoteTasks.length > 0;
 
   useEffect(() => {
     onUploadingChange?.(isUploading);
   }, [isUploading, onUploadingChange]);
-
-  useEffect(() => {
-    onTaskPresenceChange?.(hasStartedUploadTasks);
-  }, [hasStartedUploadTasks, onTaskPresenceChange]);
 
   return (
     <Card className="workspace-glass-surface overflow-hidden border-white/[0.12] bg-[#0c1625]">

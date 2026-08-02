@@ -175,6 +175,34 @@ export const recoverInterrupted = mutation({
   },
 });
 
+export const recoverStaleForCurrentUser = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await requireUserId(ctx);
+    const now = Date.now();
+    const tasks = await ctx.db
+      .query("uploadTasks")
+      .withIndex("by_user_status", (query) =>
+        query.eq("userId", userId).eq("status", "uploading"),
+      )
+      .collect();
+    const staleTasks = tasks.filter(
+      (task) => now - task.updatedAt >= staleUploadThresholdMs,
+    );
+
+    await Promise.all(
+      staleTasks.map((task) =>
+        ctx.db.patch(task._id, {
+          status: "interrupted",
+          error: "Upload connection was interrupted",
+          updatedAt: now,
+        }),
+      ),
+    );
+    return staleTasks.length;
+  },
+});
+
 export const listForProject = query({
   args: { projectId: v.id("projects") },
   handler: async (ctx, args) => {

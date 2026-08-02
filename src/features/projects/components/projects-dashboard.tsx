@@ -16,13 +16,11 @@ import {
   Upload,
 } from "lucide-react";
 import {
-  useCallback,
   useEffect,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { createPortal } from "react-dom";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -39,6 +37,7 @@ import { PopConfirm } from "@/components/ui/popconfirm";
 import { AssetUploader } from "@/features/assets/components/asset-uploader";
 import { ProjectForm } from "@/features/projects/components/project-form";
 import { ProjectMetadataEditor } from "@/features/projects/components/project-metadata-editor";
+import { ProjectTargetSelect } from "@/features/projects/components/project-target-select";
 import { api, type Id, type Project } from "@/lib/convex";
 
 type RecentProjectAsset = {
@@ -74,12 +73,16 @@ type ProjectWithAssetCount = Project & {
 };
 
 type ProjectCardProps = {
+  canMoveDown: boolean;
+  canMoveUp: boolean;
   draggingProjectId: Project["_id"] | null;
   dropTargetProjectId: Project["_id"] | null;
+  isReordering: boolean;
   language: "en" | "zh";
   onDragEnd: () => void;
   onDragStart: (projectId: Project["_id"]) => void;
   onDragTargetChange: (projectId: Project["_id"] | null) => void;
+  onMove: (direction: -1 | 1) => void;
   onDrop: (
     sourceProjectId: Project["_id"],
     targetProjectId: Project["_id"],
@@ -208,17 +211,15 @@ function ProjectAssetPreview({
 }
 
 function ProjectAssetThumbnail({ asset }: { asset: RecentProjectAsset }) {
-  const [hasPreviewError, setHasPreviewError] = useState(false);
-  const previewUrl = hasPreviewError ? null : asset.previewUrl;
-
-  // Reset error state when the preview URL changes (e.g. new short-lived Convex URL)
-  useEffect(() => {
-    setHasPreviewError(false);
-  }, [asset.previewUrl]);
+  // Track which URL last errored; when the URL changes (e.g. new short-lived
+  // Convex URL), the new URL won't match, so the image retries automatically.
+  const [erroredUrl, setErroredUrl] = useState<string | null>(null);
+  const previewUrl = asset.previewUrl;
+  const hasError = erroredUrl === previewUrl;
 
   return (
     <div className="min-w-0 overflow-hidden rounded-lg border border-white/[0.07] bg-[#0a1320]">
-      {previewUrl !== null ? (
+      {previewUrl !== null && !hasError ? (
         // Convex storage URLs are user-scoped and short-lived, so this thumbnail intentionally bypasses Next's image optimizer.
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -226,7 +227,7 @@ function ProjectAssetThumbnail({ asset }: { asset: RecentProjectAsset }) {
           src={previewUrl}
           alt={asset.name}
           loading="lazy"
-          onError={() => setHasPreviewError(true)}
+          onError={() => setErroredUrl(previewUrl)}
         />
       ) : (
         <div className="flex size-full flex-col items-center justify-center gap-1 text-muted-foreground">
@@ -241,13 +242,17 @@ function ProjectAssetThumbnail({ asset }: { asset: RecentProjectAsset }) {
 }
 
 function ProjectCard({
+  canMoveDown,
+  canMoveUp,
   completedUploadNotice,
   draggingProjectId,
   dropTargetProjectId,
+  isReordering,
   language,
   onDragEnd,
   onDragStart,
   onDragTargetChange,
+  onMove,
   onDrop,
   onOpenUpload,
   onRemoveUploadTask,
@@ -400,6 +405,30 @@ function ProjectCard({
                 <Images className="size-3.5" aria-hidden="true" />
                 {project.assetCount} {t("assetCount")}
               </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="size-8 p-0 text-muted-foreground/65 hover:bg-white/[0.07] hover:text-primary"
+                disabled={!canMoveUp || isReordering}
+                aria-label={`${t("moveProjectUp")}: ${project.name}`}
+                title={t("moveProjectUp")}
+                onClick={() => onMove(-1)}
+              >
+                <ChevronUp className="size-4" aria-hidden="true" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="size-8 p-0 text-muted-foreground/65 hover:bg-white/[0.07] hover:text-primary"
+                disabled={!canMoveDown || isReordering}
+                aria-label={`${t("moveProjectDown")}: ${project.name}`}
+                title={t("moveProjectDown")}
+                onClick={() => onMove(1)}
+              >
+                <ChevronDown className="size-4" aria-hidden="true" />
+              </Button>
               <button
                 type="button"
                 className="-mr-1 -mt-1 inline-flex h-8 w-10 shrink-0 cursor-grab items-center justify-center rounded-md text-muted-foreground/65 transition-colors hover:bg-white/[0.07] hover:text-primary active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -627,7 +656,6 @@ type ProjectUploadDialogProps = {
   isProjectSelectionLocked: boolean;
   onClose: () => void;
   onProjectChange: (projectId: Project["_id"]) => void;
-  onTaskPresenceChange: (hasTasks: boolean) => void;
   onUploadCompleted: () => void;
   onUploadingChange: (isUploading: boolean) => void;
   open: boolean;
@@ -635,216 +663,12 @@ type ProjectUploadDialogProps = {
   selectedProjectId: Project["_id"] | null;
 };
 
-type ProjectTargetSelectProps = {
-  disabled: boolean;
-  onProjectChange: (projectId: Project["_id"]) => void;
-  projects: ProjectWithAssetCount[];
-  selectedProjectId: Project["_id"] | null;
-};
-
-function ProjectTargetSelect({
-  disabled,
-  onProjectChange,
-  projects,
-  selectedProjectId,
-}: ProjectTargetSelectProps) {
-  const { t } = useLanguage();
-  const [isOpen, setIsOpen] = useState(false);
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  const [buttonRect, setButtonRect] = useState<DOMRect | null>(null);
-  const selectedProject = projects.find(
-    (project) => project._id === selectedProjectId,
-  );
-
-  function handleListboxKeyDown(event: React.KeyboardEvent) {
-    const options = dropdownRef.current?.querySelectorAll<HTMLElement>(
-      '[role="option"]',
-    );
-    if (!options || options.length === 0) return;
-
-    const currentIndex = Array.from(options).indexOf(
-      document.activeElement as HTMLElement,
-    );
-    let nextIndex = currentIndex;
-
-    switch (event.key) {
-      case "ArrowDown":
-        event.preventDefault();
-        nextIndex = Math.min(currentIndex + 1, options.length - 1);
-        break;
-      case "ArrowUp":
-        event.preventDefault();
-        nextIndex = Math.max(currentIndex - 1, 0);
-        break;
-      case "Home":
-        event.preventDefault();
-        nextIndex = 0;
-        break;
-      case "End":
-        event.preventDefault();
-        nextIndex = options.length - 1;
-        break;
-      case "Enter":
-      case " ":
-        event.preventDefault();
-        (document.activeElement as HTMLElement)?.click();
-        return;
-      case "Escape":
-        setIsOpen(false);
-        buttonRef.current?.focus();
-        return;
-      default:
-        return;
-    }
-
-    if (nextIndex !== currentIndex) {
-      options[nextIndex]?.focus();
-    }
-  }
-
-  const handleToggle = useCallback(() => {
-    if (!isOpen) {
-      setButtonRect(buttonRef.current?.getBoundingClientRect() ?? null);
-    }
-    setIsOpen((prev) => !prev);
-  }, [isOpen]);
-
-  // Close dropdown on outside interaction
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const close = () => setIsOpen(false);
-
-    const closeOnOutsidePress = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (
-        buttonRef.current?.contains(target) ||
-        dropdownRef.current?.contains(target)
-      )
-        return;
-      close();
-    };
-
-    const closeOnOutsideWheel = (event: WheelEvent) => {
-      if (!dropdownRef.current?.contains(event.target as Node)) close();
-    };
-
-    const closeOnFocusLeave = (event: FocusEvent) => {
-      const target = event.target as Node;
-      if (
-        !buttonRef.current?.contains(target) &&
-        !dropdownRef.current?.contains(target)
-      )
-        close();
-    };
-
-    // Sync position on scroll/resize
-    const syncPosition = () => {
-      setButtonRect(buttonRef.current?.getBoundingClientRect() ?? null);
-    };
-
-    document.addEventListener("mousedown", closeOnOutsidePress);
-    window.addEventListener("scroll", syncPosition, { capture: true });
-    window.addEventListener("resize", syncPosition);
-    window.addEventListener("wheel", closeOnOutsideWheel, {
-      capture: true,
-      passive: true,
-    });
-    document.addEventListener("focusin", closeOnFocusLeave);
-
-    return () => {
-      document.removeEventListener("mousedown", closeOnOutsidePress);
-      window.removeEventListener("scroll", syncPosition, { capture: true });
-      window.removeEventListener("resize", syncPosition);
-      window.removeEventListener("wheel", closeOnOutsideWheel, {
-        capture: true,
-      });
-      document.removeEventListener("focusin", closeOnFocusLeave);
-    };
-  }, [isOpen]);
-
-  return (
-    <>
-      <button
-        ref={buttonRef}
-        id="project-upload-target"
-        type="button"
-        className="flex h-11 w-full items-center justify-between rounded-lg border border-white/[0.14] bg-[#0a1627] px-4 text-left text-base text-slate-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] transition-colors hover:border-primary/45 hover:bg-[#0d1c30] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
-        aria-controls={isOpen ? "project-upload-target-options" : undefined}
-        aria-expanded={isOpen}
-        aria-haspopup="listbox"
-        disabled={disabled}
-        onClick={handleToggle}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") setIsOpen(false);
-        }}
-      >
-        <span className="truncate">
-          {selectedProject?.name ?? t("selectProject")}
-        </span>
-        {isOpen ? (
-          <ChevronUp
-            className="size-4 shrink-0 text-primary"
-            aria-hidden="true"
-          />
-        ) : (
-          <ChevronDown
-            className="size-4 shrink-0 text-muted-foreground"
-            aria-hidden="true"
-          />
-        )}
-      </button>
-      {isOpen && buttonRect
-        ? createPortal(
-            <div
-              ref={dropdownRef}
-              id="project-upload-target-options"
-              role="listbox"
-              aria-label={t("selectProject")}
-              style={{
-                position: "fixed",
-                top: buttonRect.bottom + 8,
-                left: buttonRect.left,
-                width: buttonRect.width,
-              }}
-              className="z-[100] max-h-56 overflow-y-auto rounded-lg border border-white/[0.14] bg-[#0d1b2e] p-1.5 shadow-[0_20px_42px_rgba(0,0,0,0.38)]"
-              onKeyDown={handleListboxKeyDown}
-            >
-              {projects.map((project) => {
-                const isSelected = project._id === selectedProjectId;
-                return (
-                  <button
-                    key={project._id}
-                    type="button"
-                    role="option"
-                    tabIndex={-1}
-                    aria-selected={isSelected}
-                    className={`flex w-full items-center rounded-md px-3.5 py-3 text-left text-base transition-colors ${isSelected ? "bg-[#224b82] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-100 hover:bg-[#173553] hover:text-white"}`}
-                    onClick={() => {
-                      onProjectChange(project._id);
-                      setIsOpen(false);
-                    }}
-                  >
-                    <span className="truncate">{project.name}</span>
-                  </button>
-                );
-              })}
-            </div>,
-            document.body,
-          )
-        : null}
-    </>
-  );
-}
-
 function ProjectUploadDialog({
   discardPendingSignal,
   isProjectSelectionFixed,
   isProjectSelectionLocked,
   onClose,
   onProjectChange,
-  onTaskPresenceChange,
   onUploadCompleted,
   onUploadingChange,
   open,
@@ -907,7 +731,7 @@ function ProjectUploadDialog({
               toolbarLeading={projectTargetControl}
               onUploadCompleted={onUploadCompleted}
               onUploadingChange={onUploadingChange}
-              onTaskPresenceChange={onTaskPresenceChange}
+              skipStaleRecovery
             />
           ) : (
             <div className="rounded-xl border border-dashed border-white/[0.12] bg-white/[0.018] px-5 py-10 text-center text-sm text-muted-foreground">
@@ -949,8 +773,8 @@ export function ProjectsDashboard({
   const projects = useQuery(api.projects.list);
   const reorderProjects = useMutation(api.projects.reorder);
   const removeUploadTask = useMutation(api.uploadTasks.remove);
-  const recoverInterruptedUploads = useMutation(
-    api.uploadTasks.recoverInterrupted,
+  const recoverStaleUploads = useMutation(
+    api.uploadTasks.recoverStaleForCurrentUser,
   );
   const [isCreateOpen, setIsCreateOpen] = useState(initialCreateOpen);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
@@ -961,7 +785,8 @@ export function ProjectsDashboard({
     useState<UploadEntrySource>("page");
   const [discardPendingSignal, setDiscardPendingSignal] = useState(0);
   const [isUploadInProgress, setIsUploadInProgress] = useState(false);
-  const [hasUploadTasks, setHasUploadTasks] = useState(false);
+  const [isReordering, setIsReordering] = useState(false);
+  const [reorderAnnouncement, setReorderAnnouncement] = useState("");
   const [completedUploads, setCompletedUploads] = useState<
     Record<string, CompletedUploadNotice>
   >({});
@@ -995,18 +820,14 @@ export function ProjectsDashboard({
   }, [isUploadInProgress]);
 
   useEffect(() => {
-    if (projects === undefined) return;
-
     const recoverStaleTasks = () => {
-      for (const project of projects) {
-        void recoverInterruptedUploads({ projectId: project._id });
-      }
+      void recoverStaleUploads();
     };
 
     recoverStaleTasks();
     const timer = window.setTimeout(recoverStaleTasks, 13_000);
     return () => window.clearTimeout(timer);
-  }, [projects, recoverInterruptedUploads]);
+  }, [recoverStaleUploads]);
 
   useEffect(
     () => () => {
@@ -1024,10 +845,15 @@ export function ProjectsDashboard({
       return;
     }
 
+    const selectedProjectStillExists = projects.some(
+      (project) => project._id === selectedUploadProjectId,
+    );
     const nextProjectId =
-      projectId ?? selectedUploadProjectId ?? projects[0]._id;
+      projectId ??
+      (selectedProjectStillExists ? selectedUploadProjectId : null) ??
+      projects[0]._id;
     if (
-      hasUploadTasks &&
+      isUploadInProgress &&
       selectedUploadProjectId !== null &&
       nextProjectId !== selectedUploadProjectId
     ) {
@@ -1105,14 +931,16 @@ export function ProjectsDashboard({
     setDropTargetProjectId(projectId);
   }
 
-  async function handleDrop(
+  async function swapProjects(
     sourceProjectId: Project["_id"],
     targetProjectId: Project["_id"],
   ) {
-    setDraggingProjectId(null);
-    setDropTargetProjectId(null);
-
-    if (projects === undefined || sourceProjectId === targetProjectId) return;
+    if (
+      isReordering ||
+      projects === undefined ||
+      sourceProjectId === targetProjectId
+    )
+      return;
 
     const sourceIndex = projects.findIndex(
       (project) => project._id === sourceProjectId,
@@ -1128,17 +956,46 @@ export function ProjectsDashboard({
       reorderedProjects[sourceIndex],
     ];
 
+    setIsReordering(true);
     try {
       await reorderProjects({
         projectIds: reorderedProjects.map((project) => project._id),
       });
+      setReorderAnnouncement(
+        t("projectMovedToPosition")
+          .replace("{name}", projects[sourceIndex].name)
+          .replace("{position}", String(targetIndex + 1)),
+      );
     } catch {
       toast.add({
         type: "error",
         title: t("couldNotReorderProjects"),
         priority: "high",
       });
+    } finally {
+      setIsReordering(false);
     }
+  }
+
+  function handleDrop(
+    sourceProjectId: Project["_id"],
+    targetProjectId: Project["_id"],
+  ) {
+    setDraggingProjectId(null);
+    setDropTargetProjectId(null);
+    void swapProjects(sourceProjectId, targetProjectId);
+  }
+
+  function handleMoveProject(projectId: Project["_id"], direction: -1 | 1) {
+    if (projects === undefined) return;
+
+    const currentIndex = projects.findIndex(
+      (project) => project._id === projectId,
+    );
+    const targetProject = projects[currentIndex + direction];
+    if (currentIndex === -1 || targetProject === undefined) return;
+
+    void swapProjects(projectId, targetProject._id);
   }
 
   return (
@@ -1214,18 +1071,27 @@ export function ProjectsDashboard({
               {projects.length === 1 ? t("project") : t("projectsPlural")}
             </p>
             <div className="workspace-scrollbar mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-2 [scrollbar-gutter:stable]">
+              <p className="sr-only" role="status" aria-live="polite">
+                {reorderAnnouncement}
+              </p>
               <div className="grid gap-5 py-4 md:grid-cols-2">
                 <NewProjectCard onClick={() => setIsCreateOpen(true)} />
-                {projects.map((project) => (
+                {projects.map((project, index) => (
                   <ProjectCard
                     key={project._id}
                     project={project}
                     language={language}
+                    canMoveUp={index > 0}
+                    canMoveDown={index < projects.length - 1}
                     draggingProjectId={draggingProjectId}
                     dropTargetProjectId={dropTargetProjectId}
+                    isReordering={isReordering}
                     onDragStart={handleDragStart}
                     onDragEnd={handleDragEnd}
                     onDragTargetChange={handleDragTargetChange}
+                    onMove={(direction) =>
+                      handleMoveProject(project._id, direction)
+                    }
                     onDrop={handleDrop}
                     onOpenUpload={openUpload}
                     onRemoveUploadTask={handleRemoveUploadTask}
@@ -1254,9 +1120,8 @@ export function ProjectsDashboard({
         onProjectChange={(projectId) => setSelectedUploadProjectId(projectId)}
         discardPendingSignal={discardPendingSignal}
         isProjectSelectionFixed={uploadEntrySource === "project-card"}
-        isProjectSelectionLocked={hasUploadTasks}
+        isProjectSelectionLocked={isUploadInProgress}
         onUploadingChange={setIsUploadInProgress}
-        onTaskPresenceChange={setHasUploadTasks}
         onUploadCompleted={handleUploadCompleted}
       />
     </section>
