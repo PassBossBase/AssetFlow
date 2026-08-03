@@ -67,7 +67,9 @@ type ProjectWithAssetCount = Project & {
   uploadSummary: {
     failedCount: number;
     failedTasks: FailedUploadTask[];
+    completedCount: number;
     progress: number;
+    totalCount: number;
     uploadingCount: number;
   };
 };
@@ -273,8 +275,9 @@ function ProjectCard({
   const hasUploadingTasks = project.uploadSummary.uploadingCount > 0;
   const hasFailedTasks = project.uploadSummary.failedCount > 0;
   const uploadProgressLabel = t("uploadInProgress")
-    .replace("{count}", String(project.uploadSummary.uploadingCount))
-    .replace("{progress}", String(project.uploadSummary.progress));
+    .replace("{completed}", String(project.uploadSummary.completedCount))
+    .replace("{progress}", String(project.uploadSummary.progress))
+    .replace("{total}", String(project.uploadSummary.totalCount));
 
   function clearDragPreview() {
     if (dragFrameRef.current !== null)
@@ -723,11 +726,11 @@ function ProjectUploadDialog({
           <CardTitle className="text-xl">{t("uploadAssets")}</CardTitle>
         </CardHeader>
         <CardContent className="pb-5">
-          {selectedProjectId !== null ? (
+          {selectedProject !== undefined ? (
             <AssetUploader
               compact
               discardPendingSignal={discardPendingSignal}
-              projectId={selectedProjectId}
+              projectId={selectedProject._id}
               toolbarLeading={projectTargetControl}
               onUploadCompleted={onUploadCompleted}
               onUploadingChange={onUploadingChange}

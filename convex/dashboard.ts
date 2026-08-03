@@ -1,21 +1,10 @@
-import { getAuthUserId } from "@convex-dev/auth/server";
-import type { Auth } from "convex/server";
-
 import { query } from "./_generated/server";
-
-async function requireUserId(ctx: { auth: Auth }) {
-  const userId = await getAuthUserId(ctx);
-  if (userId === null) {
-    throw new Error("Not authenticated");
-  }
-
-  return String(userId);
-}
+import { requireCurrentUser } from "./authz";
 
 export const overview = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await requireUserId(ctx);
+    const { userId } = await requireCurrentUser(ctx);
     const projects = await ctx.db
       .query("projects")
       .withIndex("by_user_createdAt", (query) => query.eq("userId", userId))

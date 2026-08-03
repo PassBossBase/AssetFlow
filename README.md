@@ -6,8 +6,8 @@ AssetFlow 是面向开发者、设计师和游戏开发者的数字资产工作�
 
 ### 账户与工作台
 
-- 邮箱密码注册、登录、退出登录与切换账号。
-- 密码由 Convex Auth 安全哈希处理；浏览器不会保存明文密码。
+- 邮箱密码注册、登录、退出登录与切换账号；注册需要通过人机校验，邮箱仅作格式校验。
+- 密码由 Better Auth 安全哈希处理；浏览器不会保存明文密码。
 - 工作台展示项目总数、素材总数、存储占用、最近素材与最近项目。
 - 个人中心支持头像、显示名称、登录邮箱展示和界面语言设置。
 - 支持 English / 简体中文切换，并在本地保留语言偏好。
@@ -82,7 +82,7 @@ AssetFlow 是面向开发者、设计师和游戏开发者的数字资产工作�
 ## 技术栈
 
 - Next.js 16、React 19、TypeScript、Tailwind CSS、shadcn/ui
-- Convex Auth、Convex Database、Convex File Storage
+- Better Auth、Convex Database、Convex File Storage
 - React Three Fiber、Three.js、@react-three/drei（仅用于 GLB / GLTF 预览）
 - Zod、React Hook Form、Motion、pnpm
 
@@ -120,19 +120,11 @@ NEXT_PUBLIC_CONVEX_URL=https://<deployment>.convex.cloud
 
 保持该命令运行，便于本地开发时同步后端变更。
 
-### 初始化 Convex Auth
+### 配置 Better Auth
 
-首次连接新的 Convex 部署后，执行：
+认证路由和会话均运行在 Convex。为每个开发、测试和生产部署分别配置站点地址、Better Auth 密钥和 Cloudflare Turnstile 密钥。它们不得写入 `.env.local`、提交到 Git、复制到聊天记录或截图中。
 
-```bash
-pnpm exec @convex-dev/auth --web-server-url http://localhost:3000
-```
-
-该命令会在当前 Convex 部署中配置认证所需的 `SITE_URL`、`JWT_PRIVATE_KEY` 和 `JWKS`。它们属于后端部署环境变量，不能写入 `.env.local`、提交到 Git、复制到聊天记录或截图中。
-
-如果命令提示已有密钥，除非正在进行计划性的密钥轮换，否则不要覆盖。覆盖密钥会使现有登录会话失效。
-
-生产部署应使用生产站点地址单独初始化，且必须使用独立密钥。`CONVEX_SITE_URL` 是 Convex 后端自动提供的系统变量，无需手动设置。
+前端仅需要 `NEXT_PUBLIC_CONVEX_URL`、`NEXT_PUBLIC_CONVEX_SITE_URL` 和 Turnstile 的公开站点密钥。生产、测试和开发环境必须使用彼此独立的认证密钥与验证码密钥。
 
 ### 启动前端
 

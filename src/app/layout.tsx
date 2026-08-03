@@ -4,6 +4,7 @@ import { ConvexClientProvider } from "@/components/convex-client-provider";
 import { LanguageProvider } from "@/components/language-provider";
 import { LanguageToggle } from "@/components/language-toggle";
 import { Toaster } from "@/components/ui/toast";
+import { getToken } from "@/lib/auth-server";
 
 import "./globals.css";
 
@@ -15,12 +16,14 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const initialToken = process.env.NEXT_PUBLIC_CONVEX_URL === undefined ? null : await getToken();
+
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
         <LanguageProvider>
-          <ConvexClientProvider>{children}</ConvexClientProvider>
+          <ConvexClientProvider initialToken={initialToken}>{children}</ConvexClientProvider>
           <LanguageToggle />
           <Toaster />
         </LanguageProvider>

@@ -1,17 +1,10 @@
-import { getAuthUserId } from "@convex-dev/auth/server";
-import type { Auth } from "convex/server";
 import { v } from "convex/values";
 
 import { mutation, query } from "./_generated/server";
+import { requireCurrentUser } from "./authz";
 
 const maxAvatarSize = 5 * 1024 * 1024;
 const allowedAvatarMimeTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
-
-async function requireUserId(ctx: { auth: Auth }) {
-  const userId = await getAuthUserId(ctx);
-  if (userId === null) throw new Error("Not authenticated");
-  return String(userId);
-}
 
 function validateDisplayName(displayName: string) {
   const trimmedDisplayName = displayName.trim();
@@ -34,23 +27,22 @@ function validateAvatar(mimeType: string, size: number) {
 export const current = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) {
+    const user = await requireCurrentUser(ctx).catch(() => null);
+    if (user === null) {
       return null;
     }
 
-    const user = await ctx.db.get(userId);
     const profile = await ctx.db
       .query("userProfiles")
-      .withIndex("by_user", (query) => query.eq("userId", String(userId)))
+      .withIndex("by_user", (query) => query.eq("userId", user.userId))
       .unique();
     const avatarUrl = profile?.avatarStorageId === undefined ? undefined : await ctx.storage.getUrl(profile.avatarStorageId);
 
     return {
-      subject: userId,
-      email: user?.email,
-      name: profile?.displayName ?? user?.name,
-      image: avatarUrl ?? user?.image,
+      subject: user.userId,
+      email: user.email,
+      name: profile?.displayName ?? user.name,
+      image: avatarUrl ?? user.image,
     };
   },
 });
@@ -58,7 +50,7 @@ export const current = query({
 export const generateAvatarUploadUrl = mutation({
   args: { mimeType: v.string(), size: v.number() },
   handler: async (ctx, args) => {
-    await requireUserId(ctx);
+    await requireCurrentUser(ctx);
     validateAvatar(args.mimeType, args.size);
     return await ctx.storage.generateUploadUrl();
   },
@@ -71,7 +63,7 @@ export const updateProfile = mutation({
     removeAvatar: v.boolean(),
   },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
+    const { userId } = await requireCurrentUser(ctx);
     const displayName = validateDisplayName(args.displayName);
     const profile = await ctx.db
       .query("userProfiles")
@@ -80,6 +72,29 @@ export const updateProfile = mutation({
     const previousAvatarStorageId = profile?.avatarStorageId;
     const nextAvatarStorageId = args.removeAvatar ? undefined : args.avatarStorageId;
     const updatesAvatar = args.removeAvatar || args.avatarStorageId !== undefined;
+    if (nextAvatarStorageId !== undefined) {
+      const metadata = await ctx.db.system.get("_storage", nextAvatarStorageId);
+      if (metadata === null) throw new Error("Profile photo upload was not found");
+      validateAvatar(metadata.contentType ?? "", metadata.size);
+      const existingProfile = await ctx.db
+        .query("userProfiles")
+        .withIndex("by_avatar", (query) => query.eq("avatarStorageId", nextAvatarStorageId))
+        .unique();
+      if (existingProfile !== null && existingProfile.userId !== userId) {
+        throw new Error("Profile photo is already attached to another account");
+      }
+      const existingAsset = await ctx.db
+        .query("assets")
+        .withIndex("by_storage", (query) => query.eq("storageId", nextAvatarStorageId))
+        .unique();
+      const existingUploadTask = await ctx.db
+        .query("uploadTasks")
+        .withIndex("by_storage", (query) => query.eq("storageId", nextAvatarStorageId))
+        .unique();
+      if (existingAsset !== null || existingUploadTask !== null) {
+        throw new Error("Profile photo is already attached to another record");
+      }
+    }
     const now = Date.now();
 
     if (profile === null) {

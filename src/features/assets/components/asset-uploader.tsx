@@ -13,7 +13,7 @@ import { assetAccept, formatFileSize, getFileExtension, isSupportedExtension, ma
 
 type UploadResponse = { storageId: string };
 type UploadStatus = "pending" | "uploading" | "uploaded" | "failed";
-type RemoteUploadStatus = "uploading" | "failed" | "interrupted";
+type RemoteUploadStatus = "uploading" | "uploaded" | "failed" | "interrupted";
 
 type UploadItem = {
   id: string;
@@ -83,8 +83,9 @@ function getStatusLabel(status: UploadStatus, t: (key: "pendingUpload" | "upload
   return t("pendingUpload");
 }
 
-function getRemoteStatusLabel(status: RemoteUploadStatus, t: (key: "uploading" | "uploadFailedStatus" | "uploadInterrupted") => string): string {
+function getRemoteStatusLabel(status: RemoteUploadStatus, t: (key: "uploading" | "uploadedStatus" | "uploadFailedStatus" | "uploadInterrupted") => string): string {
   if (status === "uploading") return t("uploading");
+  if (status === "uploaded") return t("uploadedStatus");
   if (status === "failed") return t("uploadFailedStatus");
   return t("uploadInterrupted");
 }
@@ -124,8 +125,8 @@ export function AssetUploader({ compact = false, discardPendingSignal = 0, proje
   const activeTaskIdsRef = useRef<Set<string>>(new Set());
   const activeRemoteTaskIdsRef = useRef<Set<Id<"uploadTasks">>>(new Set());
   const progressSyncRef = useRef<Map<string, { progress: number; syncedAt: number }>>(new Map());
-  const generateUploadUrl = useMutation(api.assets.generateUploadUrl);
-  const createUploadTask = useMutation(api.uploadTasks.create);
+  const generateUploadUrl = useMutation(api.uploadTasks.generateUploadUrl);
+  const createUploadBatch = useMutation(api.uploadTasks.createBatch);
   const retryUploadTask = useMutation(api.uploadTasks.retry);
   const updateUploadProgress = useMutation(api.uploadTasks.updateProgress);
   const heartbeatUploadTask = useMutation(api.uploadTasks.heartbeat);
@@ -175,7 +176,10 @@ export function AssetUploader({ compact = false, discardPendingSignal = 0, proje
     completionTimersRef.current.set(id, { dismiss });
   }
 
-  useEffect(() => () => clearCompletionTimers(), []);
+  useEffect(() => () => {
+    clearCompletionTimers();
+    activeRemoteTaskIdsRef.current.clear();
+  }, []);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -277,36 +281,61 @@ export function AssetUploader({ compact = false, discardPendingSignal = 0, proje
 
     setError(null);
     setStatus(null);
-    let uploadedCount = 0;
-    let failedCount = 0;
-
-    await Promise.all(items.filter((item) => !activeTaskIdsRef.current.has(item.id)).map(async (item) => {
+    const activeItems = items.filter((item) => !activeTaskIdsRef.current.has(item.id));
+    activeItems.forEach((item) => {
       activeTaskIdsRef.current.add(item.id);
       updateItem(item.id, { status: "uploading", progress: 0, error: undefined });
-      let taskId: Id<"uploadTasks"> | undefined;
+    });
+    const createdTaskIds = new Map<string, Id<"uploadTasks">>();
+    const newItems = activeItems.filter((item) => item.taskId === undefined);
+    if (newItems.length > 0) {
       try {
-        if (item.taskId === undefined) {
-          taskId = await createUploadTask({
-            projectId,
+        const taskIds = await createUploadBatch({
+          projectId,
+          files: newItems.map((item) => ({
             fileName: item.file.name,
             extension: getFileExtension(item.file.name),
             mimeType: item.file.type || "application/octet-stream",
             size: item.file.size,
-          });
+          })),
+        });
+        newItems.forEach((item, index) => {
+          const taskId = taskIds[index];
+          if (taskId === undefined) throw new Error("Upload task could not be created");
+          createdTaskIds.set(item.id, taskId);
           updateItem(item.id, { taskId });
-        } else {
-          taskId = item.taskId;
-          await retryUploadTask({ id: taskId });
+        });
+      } catch (batchError) {
+        const message = batchError instanceof Error ? batchError.message : t("uploadFailed");
+        activeItems.forEach((item) => {
+          activeTaskIdsRef.current.delete(item.id);
+          updateItem(item.id, { status: "failed", error: message });
+        });
+        setStatus(t("uploadFailed"));
+        toast.add({ type: "error", title: t("uploadFailed"), priority: "high" });
+        return;
+      }
+    }
+    let uploadedCount = 0;
+    let failedCount = 0;
+
+    await Promise.all(activeItems.map(async (item) => {
+      let taskId: Id<"uploadTasks"> | undefined;
+      try {
+        taskId = item.taskId ?? createdTaskIds.get(item.id);
+        if (item.taskId !== undefined) {
+          await retryUploadTask({ id: item.taskId });
         }
 
         if (taskId === undefined) throw new Error("Upload task could not be created");
         const resolvedTaskId = taskId;
         activeRemoteTaskIdsRef.current.add(resolvedTaskId);
-        const postUrl = await generateUploadUrl({ projectId });
+        const postUrl = await generateUploadUrl({ id: resolvedTaskId });
         const payload = await uploadFileWithProgress(postUrl, item.file, (progress) => {
           updateItem(item.id, { progress });
           syncProgress(resolvedTaskId, item.id, progress);
         });
+        activeRemoteTaskIdsRef.current.delete(resolvedTaskId);
         await completeUploadTask({ id: resolvedTaskId, storageId: payload.storageId as Id<"_storage"> });
         updateItem(item.id, { status: "uploaded", progress: 100 });
         scheduleCompletedTaskRemoval(item.id);

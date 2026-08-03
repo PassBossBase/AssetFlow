@@ -1,20 +1,7 @@
 import { mutation, query } from "./_generated/server";
-import { getAuthUserId } from "@convex-dev/auth/server";
-import type { Auth } from "convex/server";
 import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
-
-const allowedExtensions = new Set(["png", "jpg", "jpeg", "webp", "svg", "gif", "glb", "gltf"]);
-const maxFileSize = 250 * 1024 * 1024;
-
-async function requireUserId(ctx: { auth: Auth }) {
-  const userId = await getAuthUserId(ctx);
-  if (userId === null) {
-    throw new Error("Not authenticated");
-  }
-
-  return String(userId);
-}
+import { requireCurrentUser } from "./authz";
 
 async function requireProject(ctx: { db: { get: (id: Id<"projects">) => Promise<{ userId: string } | null> } }, projectId: Id<"projects">, userId: string) {
   const project = await ctx.db.get(projectId);
@@ -23,20 +10,6 @@ async function requireProject(ctx: { db: { get: (id: Id<"projects">) => Promise<
   }
 
   return project;
-}
-
-function validateFileMetadata(extension: string, name: string, size: number) {
-  if (!allowedExtensions.has(extension)) {
-    throw new Error("Unsupported file type");
-  }
-
-  if (name.trim().length < 1 || name.trim().length > 160) {
-    throw new Error("File name must be between 1 and 160 characters");
-  }
-
-  if (size <= 0 || size > maxFileSize) {
-    throw new Error("File size must be between 1 byte and 250 MB");
-  }
 }
 
 function validateBatchAssetIds(ids: Id<"assets">[]) {
@@ -83,52 +56,10 @@ async function requireOwnedProjectAssets(
   return ownedAssets;
 }
 
-export const generateUploadUrl = mutation({
-  args: { projectId: v.id("projects") },
-  handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
-    await requireProject(ctx, args.projectId, userId);
-    return await ctx.storage.generateUploadUrl();
-  },
-});
-
-export const create = mutation({
-  args: {
-    projectId: v.id("projects"),
-    storageId: v.id("_storage"),
-    name: v.string(),
-    originalName: v.string(),
-    extension: v.string(),
-    mimeType: v.string(),
-    size: v.number(),
-  },
-  handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
-    await requireProject(ctx, args.projectId, userId);
-
-    const extension = args.extension.trim().toLowerCase();
-    validateFileMetadata(extension, args.name, args.size);
-
-    const now = Date.now();
-    return await ctx.db.insert("assets", {
-      projectId: args.projectId,
-      userId,
-      storageId: args.storageId,
-      name: args.name.trim(),
-      originalName: args.originalName.trim(),
-      extension,
-      mimeType: args.mimeType.trim().slice(0, 160),
-      size: args.size,
-      createdAt: now,
-      updatedAt: now,
-    });
-  },
-});
-
 export const get = query({
   args: { id: v.id("assets") },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
+    const { userId } = await requireCurrentUser(ctx);
     const asset = await ctx.db.get(args.id);
 
     if (asset === null || asset.userId !== userId) {
@@ -146,7 +77,7 @@ export const list = query({
     extension: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
+    const { userId } = await requireCurrentUser(ctx);
     await requireProject(ctx, args.projectId, userId);
 
     const search = args.search?.trim().toLowerCase() ?? "";
@@ -168,7 +99,7 @@ export const list = query({
 export const getDownloadUrl = query({
   args: { id: v.id("assets") },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
+    const { userId } = await requireCurrentUser(ctx);
     const asset = await ctx.db.get(args.id);
     if (asset === null || asset.userId !== userId) {
       return null;
@@ -184,7 +115,7 @@ export const rename = mutation({
     name: v.string(),
   },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
+    const { userId } = await requireCurrentUser(ctx);
     const asset = await ctx.db.get(args.id);
     if (asset === null || asset.userId !== userId) {
       throw new Error("Asset not found");
@@ -202,7 +133,7 @@ export const rename = mutation({
 export const remove = mutation({
   args: { id: v.id("assets") },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
+    const { userId } = await requireCurrentUser(ctx);
     const asset = await ctx.db.get(args.id);
     if (asset === null || asset.userId !== userId) {
       throw new Error("Asset not found");
@@ -220,7 +151,7 @@ export const batchMove = mutation({
     targetProjectId: v.id("projects"),
   },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
+    const { userId } = await requireCurrentUser(ctx);
     validateBatchAssetIds(args.ids);
     await requireProject(ctx, args.projectId, userId);
     await requireProject(ctx, args.targetProjectId, userId);
@@ -244,7 +175,7 @@ export const batchRemove = mutation({
     projectId: v.id("projects"),
   },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
+    const { userId } = await requireCurrentUser(ctx);
     validateBatchAssetIds(args.ids);
     await requireProject(ctx, args.projectId, userId);
     const assets = await requireOwnedProjectAssets(ctx, args.ids, args.projectId, userId);

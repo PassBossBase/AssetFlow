@@ -2,50 +2,59 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { useAuthActions } from "@convex-dev/auth/react";
 import { useMutation, useQuery } from "convex/react";
+import { LoaderCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/components/language-provider";
 import { PopConfirm } from "@/components/ui/popconfirm";
 import { api } from "@/lib/convex";
+import { authClient } from "@/lib/auth-client";
 
 type SignOutDestination = "/" | "/sign-in";
+type SessionTransitionPhase = "idle" | "signingOut" | "redirecting";
 
 export function AccountSessionActions() {
   const { t } = useLanguage();
   const router = useRouter();
-  const { signOut } = useAuthActions();
   const activeUploadCount = useQuery(api.uploadTasks.activeCount);
   const interruptActiveUploads = useMutation(api.uploadTasks.interruptActive);
-  const [isSigningOut, setIsSigningOut] = useState(false);
+  const [sessionTransitionPhase, setSessionTransitionPhase] = useState<SessionTransitionPhase>("idle");
+  const [pendingDestination, setPendingDestination] = useState<SignOutDestination | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const isSessionTransitioning = sessionTransitionPhase !== "idle";
 
   async function handleSignOut(destination: SignOutDestination) {
+    if (isSessionTransitioning) return;
     setError(null);
-    setIsSigningOut(true);
+    setPendingDestination(destination);
+    setSessionTransitionPhase("signingOut");
 
     try {
       if ((activeUploadCount ?? 0) > 0) await interruptActiveUploads({});
-      await signOut();
-      router.push(destination);
+      const result = await authClient.signOut();
+      if (result.error !== null) throw new Error(result.error.message);
+      setSessionTransitionPhase("redirecting");
+      router.replace(destination);
       router.refresh();
     } catch (signOutError) {
       setError(signOutError instanceof Error ? signOutError.message : "Could not sign out");
-    } finally {
-      setIsSigningOut(false);
+      setPendingDestination(null);
+      setSessionTransitionPhase("idle");
     }
   }
 
   function renderAction(label: string, destination: SignOutDestination, className: string) {
+    const progressLabel = pendingDestination === "/sign-in" ? t("switchingAccount") : t("signingOut");
+    const actionLabel = isSessionTransitioning ? <><LoaderCircle aria-hidden="true" className="size-3.5 animate-spin motion-reduce:animate-none" />{progressLabel}</> : label;
     const action = (
-      <Button type="button" size="sm" className={`h-9 flex-1 px-2 text-xs text-white ${className}`} disabled={isSigningOut} aria-busy={isSigningOut}>
-        {isSigningOut ? t("working") : label}
+      <Button type="button" size="sm" className={`h-9 flex-1 px-2 text-xs text-white ${className}`} disabled={isSessionTransitioning} aria-busy={isSessionTransitioning}>
+        {actionLabel}
       </Button>
     );
 
     if ((activeUploadCount ?? 0) === 0) {
-      return <Button key={destination} type="button" size="sm" className={`h-9 flex-1 px-2 text-xs text-white ${className}`} disabled={isSigningOut} aria-busy={isSigningOut} onClick={() => void handleSignOut(destination)}>{isSigningOut ? t("working") : label}</Button>;
+      return <Button key={destination} type="button" size="sm" className={`h-9 flex-1 px-2 text-xs text-white ${className}`} disabled={isSessionTransitioning} aria-busy={isSessionTransitioning} onClick={() => void handleSignOut(destination)}>{actionLabel}</Button>;
     }
 
     return (
@@ -55,7 +64,7 @@ export function AccountSessionActions() {
         description={t("signOutInterruptsUploads").replace("{count}", String(activeUploadCount))}
         confirmLabel={t("signOutAnyway")}
         cancelLabel={t("cancel")}
-        disabled={isSigningOut}
+        disabled={isSessionTransitioning}
         onConfirm={() => handleSignOut(destination)}
         trigger={action}
       />

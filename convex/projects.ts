@@ -1,22 +1,12 @@
 import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
-import { getAuthUserId } from "@convex-dev/auth/server";
-import type { Auth } from "convex/server";
-
-async function requireUserId(ctx: { auth: Auth }) {
-  const userId = await getAuthUserId(ctx);
-  if (userId === null) {
-    throw new Error("Not authenticated");
-  }
-
-  return String(userId);
-}
+import { requireCurrentUser } from "./authz";
 
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await requireUserId(ctx);
+    const { userId } = await requireCurrentUser(ctx);
     const projects = await ctx.db
       .query("projects")
       .withIndex("by_user_createdAt", (query) => query.eq("userId", userId))
@@ -46,22 +36,75 @@ export const list = query({
       .query("uploadTasks")
       .withIndex("by_user", (query) => query.eq("userId", userId))
       .collect();
+    const activeBatchIds = new Set(uploadTasks.flatMap((task) => (
+      (task.status === "uploading" || task.status === "uploaded") && task.batchId !== undefined
+        ? [task.batchId]
+        : []
+    )));
+    const activeUploadBatches = (await ctx.db
+      .query("uploadBatches")
+      .withIndex("by_user", (query) => query.eq("userId", userId))
+      .collect())
+      .filter((batch) => activeBatchIds.has(batch._id));
     const uploadSummaryByProject = new Map<string, {
       failedCount: number;
       failedTasks: Array<{ _id: Id<"uploadTasks">; fileName: string; size: number; status: "failed" | "interrupted" }>;
-      progressBytes: number;
+      completedCount: number;
+      totalCount: number;
+      uploadedBytes: number;
       totalBytes: number;
       uploadingCount: number;
     }>();
 
+    const batchesById = new Map(activeUploadBatches.map((batch) => [batch._id, batch]));
+    for (const batch of activeUploadBatches) {
+      const summary = uploadSummaryByProject.get(batch.projectId) ?? {
+        failedCount: 0,
+        failedTasks: [],
+        completedCount: 0,
+        totalCount: 0,
+        uploadedBytes: 0,
+        totalBytes: 0,
+        uploadingCount: 0,
+      };
+      summary.completedCount += batch.completedCount;
+      summary.totalCount += batch.fileCount;
+      summary.uploadedBytes += batch.completedBytes;
+      summary.totalBytes += batch.totalBytes;
+      uploadSummaryByProject.set(batch.projectId, summary);
+    }
+
     for (const task of uploadTasks) {
-      const summary = uploadSummaryByProject.get(task.projectId) ?? { failedCount: 0, failedTasks: [], progressBytes: 0, totalBytes: 0, uploadingCount: 0 };
+      const summary = uploadSummaryByProject.get(task.projectId) ?? {
+        failedCount: 0,
+        failedTasks: [],
+        completedCount: 0,
+        totalCount: 0,
+        uploadedBytes: 0,
+        totalBytes: 0,
+        uploadingCount: 0,
+      };
+      const belongsToActiveBatch = task.batchId !== undefined && batchesById.has(task.batchId);
       if (task.status === "uploading") {
         summary.uploadingCount += 1;
-        summary.progressBytes += task.size * (task.progress / 100);
-        summary.totalBytes += task.size;
+        summary.uploadedBytes += task.size * (task.progress / 100);
+        if (!belongsToActiveBatch) {
+          summary.totalCount += 1;
+          summary.totalBytes += task.size;
+        }
+      } else if (task.status === "uploaded") {
+        summary.completedCount += 1;
+        summary.uploadedBytes += task.size;
+        if (!belongsToActiveBatch) {
+          summary.totalCount += 1;
+          summary.totalBytes += task.size;
+        }
       } else {
         summary.failedCount += 1;
+        if (!belongsToActiveBatch) {
+          summary.totalCount += 1;
+          summary.totalBytes += task.size;
+        }
         if (summary.failedTasks.length < 2) {
           summary.failedTasks.push({ _id: task._id, fileName: task.fileName, size: task.size, status: task.status });
         }
@@ -76,7 +119,11 @@ export const list = query({
         uploadSummary: {
           failedCount: summary?.failedCount ?? 0,
           failedTasks: summary?.failedTasks ?? [],
-          progress: summary === undefined || summary.totalBytes === 0 ? 0 : Math.round((summary.progressBytes / summary.totalBytes) * 100),
+          completedCount: summary?.completedCount ?? 0,
+          progress: summary === undefined || summary.totalBytes === 0
+            ? 0
+            : Math.round(Math.min(100, (summary.uploadedBytes / summary.totalBytes) * 100)),
+          totalCount: summary?.totalCount ?? 0,
           uploadingCount: summary?.uploadingCount ?? 0,
         },
       };
@@ -97,7 +144,7 @@ export const list = query({
 export const get = query({
   args: { id: v.id("projects") },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
+    const { userId } = await requireCurrentUser(ctx);
     const project = await ctx.db.get(args.id);
 
     if (project === null || project.userId !== userId) {
@@ -114,7 +161,7 @@ export const create = mutation({
     description: v.string(),
   },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
+    const { userId } = await requireCurrentUser(ctx);
     const name = args.name.trim();
 
     if (name.length < 2 || name.length > 80) {
@@ -145,7 +192,7 @@ export const update = mutation({
     description: v.string(),
   },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
+    const { userId } = await requireCurrentUser(ctx);
     const project = await ctx.db.get(args.id);
 
     if (project === null || project.userId !== userId) {
@@ -168,7 +215,7 @@ export const update = mutation({
 export const reorder = mutation({
   args: { projectIds: v.array(v.id("projects")) },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
+    const { userId } = await requireCurrentUser(ctx);
     const projects = await ctx.db
       .query("projects")
       .withIndex("by_user_createdAt", (query) => query.eq("userId", userId))
@@ -193,7 +240,7 @@ export const reorder = mutation({
 export const remove = mutation({
   args: { id: v.id("projects") },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
+    const { userId } = await requireCurrentUser(ctx);
     const project = await ctx.db.get(args.id);
 
     if (project === null || project.userId !== userId) {
@@ -208,6 +255,10 @@ export const remove = mutation({
       .query("uploadTasks")
       .withIndex("by_project", (query) => query.eq("projectId", args.id))
       .collect();
+    const uploadBatches = await ctx.db
+      .query("uploadBatches")
+      .withIndex("by_project", (query) => query.eq("projectId", args.id))
+      .collect();
 
     for (const asset of assets) {
       await ctx.storage.delete(asset.storageId);
@@ -215,7 +266,14 @@ export const remove = mutation({
     }
 
     for (const uploadTask of uploadTasks) {
+      if (uploadTask.storageId !== undefined) {
+        await ctx.storage.delete(uploadTask.storageId);
+      }
       await ctx.db.delete(uploadTask._id);
+    }
+
+    for (const uploadBatch of uploadBatches) {
+      await ctx.db.delete(uploadBatch._id);
     }
 
     await ctx.db.delete(args.id);

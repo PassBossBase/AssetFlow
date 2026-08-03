@@ -54,16 +54,17 @@
 使用 Convex 负责数据模型、查询、修改、后端逻辑和文件存储。
 
 - 新开发者先运行 `pnpm convex:dev`，创建或选择有访问权限的开发部署。
-- 新部署必须运行 `pnpm exec @convex-dev/auth --web-server-url http://localhost:3000` 初始化认证环境。
+- 认证使用 Better Auth 与 `@convex-dev/better-auth` 的本地 Convex Component；`convex/betterAuth/` 的 schema 必须与认证插件配置保持一致。
 - 前端仅通过 `NEXT_PUBLIC_CONVEX_URL` 连接部署；`CONVEX_SITE_URL` 由 Convex 后端提供，不能在前端 `.env.local` 覆盖。
-- `SITE_URL`、`JWT_PRIVATE_KEY`、`JWKS` 属于 Convex 部署环境变量；不得写入代码、前端环境文件、文档示例或日志。
+- `SITE_URL`、`BETTER_AUTH_SECRET`、邮件服务密钥和验证码服务密钥属于 Convex 部署环境变量；不得写入代码、前端环境文件、文档示例或日志。
 - 认证密钥仅在新部署初始化或计划性轮换时更新；轮换会使现有登录会话失效。
 - 开发、测试和生产部署必须使用独立数据与认证密钥。
 - `.env.local`、`.convex/`、真实部署地址、私钥、邮件服务密钥和第三方服务密钥不得提交到 Git。
 
 ### 认证与账户安全
 
-- 使用 Convex Auth 的 `Password` Provider；密码仅以安全哈希形式保存，禁止读取、记录或存储明文密码。
+- 使用 Better Auth 邮箱密码认证与 Cloudflare Turnstile；当前注册只校验邮箱格式，不启用邮箱 OTP。密码仅以安全哈希形式保存，禁止读取、记录或存储明文密码。
+- 所有业务函数必须通过 Better Auth Component 的真实会话校验获取当前用户，禁止只依赖未验证的 JWT 身份。
 - 禁止实现“记住密码”或以 localStorage、sessionStorage、Cookie 自行保存密码；登录保持状态仅由认证会话负责。
 - 未实际接入邮件服务和一次性验证机制前，不得伪造密码找回功能。
 - 头像仅支持 JPG、PNG、WEBP，最大 5 MB；个人资料只能由当前认证用户更新。

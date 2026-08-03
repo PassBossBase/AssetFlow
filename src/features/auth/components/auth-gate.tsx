@@ -1,13 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { Authenticated, AuthLoading, Unauthenticated, useMutation } from "convex/react";
+import { Authenticated, AuthLoading, Unauthenticated } from "convex/react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useLanguage } from "@/components/language-provider";
-import { api } from "@/lib/convex";
 
 const convexIsConfigured = Boolean(process.env.NEXT_PUBLIC_CONVEX_URL);
 
@@ -64,45 +62,26 @@ export function AuthGate({ children, nextPath = "/dashboard" }: { children: Reac
       <Unauthenticated>
         <SignInRequired nextPath={nextPath} />
       </Unauthenticated>
-      <Authenticated><OwnershipMigrationGate>{children}</OwnershipMigrationGate></Authenticated>
+      <Authenticated>{children}</Authenticated>
     </>
   );
-}
-
-function OwnershipMigrationGate({ children }: { children: React.ReactNode }) {
-  const { t } = useLanguage();
-  const normalizeLegacyOwnership = useMutation(api.migrations.normalizeLegacyOwnership);
-  const [isReady, setIsReady] = useState(false);
-  const [hasFailed, setHasFailed] = useState(false);
-  const [attempt, setAttempt] = useState(0);
-
-  useEffect(() => {
-    let isActive = true;
-
-    void normalizeLegacyOwnership()
-      .then(() => {
-        if (isActive) setIsReady(true);
-      })
-      .catch(() => {
-        if (isActive) setHasFailed(true);
-      });
-
-    return () => {
-      isActive = false;
-    };
-  }, [attempt, normalizeLegacyOwnership]);
-
-  if (isReady) return <>{children}</>;
-
-  if (hasFailed) {
-    return <main className="flex min-h-[100dvh] items-center justify-center px-6 py-16"><div className="space-y-4 text-center"><p className="text-sm text-muted-foreground">{t("couldNotLoadWorkspace")}</p><Button type="button" onClick={() => { setHasFailed(false); setAttempt((current) => current + 1); }}>{t("tryAgain")}</Button></div></main>;
-  }
-
-  return <LoadingWorkspace />;
 }
 
 function LoadingWorkspace() {
   const { t } = useLanguage();
 
-  return <main className="flex min-h-[100dvh] items-center justify-center px-6 py-16 text-sm text-muted-foreground">{t("loadingWorkspace")}</main>;
+  return (
+    <main className="min-h-[100dvh] bg-slate-950 px-6 py-16" aria-busy="true" aria-live="polite">
+      <div className="mx-auto max-w-6xl space-y-8 motion-safe:animate-pulse motion-reduce:animate-none">
+        <div className="flex items-center justify-between">
+          <div className="h-8 w-44 rounded-lg bg-white/10" />
+          <div className="h-9 w-28 rounded-lg bg-white/10" />
+        </div>
+        <div className="grid gap-5 md:grid-cols-3">
+          {["first", "second", "third"].map((item) => <div key={item} className="h-40 rounded-2xl border border-white/10 bg-white/5" />)}
+        </div>
+        <p className="text-sm text-slate-300">{t("loadingWorkspace")}</p>
+      </div>
+    </main>
+  );
 }
